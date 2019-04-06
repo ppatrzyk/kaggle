@@ -1,4 +1,5 @@
-# TODO: fix this there are wrong tags returned
+# https://getsatisfaction.com/lastfm/topics/gettoptags-getting-wrong-tags
+# TODO wait for fix and test this locally
 
 library(curl)
 library(data.table)
@@ -15,6 +16,8 @@ lastfm[, artist_lastfm := NA_character_]
 lastfm[, listeners_lastfm := NA_integer_]
 lastfm[, scrobbles_lastfm := NA_integer_]
 lastfm[, tags_lastfm := NA_character_]
+lastfm[, tags_length := NA_integer_]
+lastfm[, tags_lastfm_all := NA_character_]
 
 # helpers for extract
 api_root <- "http://ws.audioscrobbler.com/2.0/?method="
@@ -52,7 +55,9 @@ add_data <- function(response){
     name <- xml_text(xml_find_first(parsed_xml, ".//artist/name"))
     listeners <- xml_text(xml_find_first(parsed_xml, ".//listeners"))
     scrobbles <- xml_text(xml_find_first(parsed_xml, ".//playcount"))
-    tags <- xml_text(xml_find_all(parsed_xml, ".//tag/name"))
+    tags_vector <- xml_text(xml_find_all(parsed_xml, ".//tag/name"))
+    tags_length <- length(tags_vector)
+    tags <- paste(tags_vector, collapse = "; ")
     lastfm[
       page_index,
       `:=`(
@@ -125,52 +130,53 @@ for (i in 1:length(batches2)) {
   flush.console()
 }
 
-# tag_indices <- lastfm[, which(!is.na(listeners_lastfm))]
-# 
-# artist_urls3 <- lastfm[!is.na(listeners_lastfm),
-#   ifelse(
-#     lastfm_by_mbid,
-#     paste0(
-#       api_root,
-#       "artist.gettoptags&",
-#       "mbid=",
-#       mbid,
-#       "&api_key=",
-#       api_key
-#     ),
-#     paste0(
-#       api_root,
-#       "artist.gettoptags&",
-#       "artist=",
-#       URLencode(artist_lastfm),
-#       "&autocorrect=0",
-#       "&api_key=",
-#       api_key
-#     )
-#   )
-# ]
+# if there are less then 5 in earlier response it means that's everything, no need to call
+tag_indices <- lastfm[, which(!is.na(listeners_lastfm) & tags_length == 5)]
 
-# all_indices3 <- 1:length(artist_urls3)
-# batches3 <- split(all_indices3, ceiling(seq_along(all_indices3) / 100))
-# add_data3 <- function(response){
-#   page_index <- tag_indices[which(artist_urls3 == response$url)]
-#   content <- rawToChar(response$content)
-#   Encoding(content) <- 'UTF-8'
-#   parsed_xml <- read_xml(content)
-#   status <- xml_attr(xml_find_first(parsed_xml, "..//lfm"), "status")
-#   if(status == "ok"){
-#     tags <- paste(xml_text(xml_find_all(parsed_xml, ".//tag/name")), collapse = "; ")
-#     lastfm[page_index, tags_lastfm := tags]
-#   }
-# }
-# 
-# for (i in 1:length(batches3)) {
-#   current_batch <- batches3[[i]]
-#   start <- Sys.time()
-#   run_batch(url_list = artist_urls3, indices = current_batch, update_data = add_data3)
-#   print(sprintf("Batch %s / %s processed.", i, length(batches3)))
-#   print(Sys.time() - start)
-#   flush.console()
-# }
+artist_urls3 <- lastfm[!is.na(listeners_lastfm),
+  ifelse(
+    lastfm_by_mbid,
+    paste0(
+      api_root,
+      "artist.gettoptags&",
+      "mbid=",
+      mbid,
+      "&api_key=",
+      api_key
+    ),
+    paste0(
+      api_root,
+      "artist.gettoptags&",
+      "artist=",
+      URLencode(artist_lastfm),
+      "&autocorrect=0",
+      "&api_key=",
+      api_key
+    )
+  )
+]
+
+all_indices3 <- 1:length(artist_urls3)
+batches3 <- split(all_indices3, ceiling(seq_along(all_indices3) / 100))
+add_data3 <- function(response){
+  page_index <- tag_indices[which(artist_urls3 == response$url)]
+  content <- rawToChar(response$content)
+  Encoding(content) <- 'UTF-8'
+  parsed_xml <- read_xml(content)
+  status <- xml_attr(xml_find_first(parsed_xml, "..//lfm"), "status")
+  if(status == "ok"){
+    tags <- paste(xml_text(xml_find_all(parsed_xml, ".//tag/name")), collapse = "; ")
+    lastfm[page_index, tags_lastfm_all := tags]
+  }
+}
+
+for (i in 1:length(batches3)) {
+  current_batch <- batches3[[i]]
+  start <- Sys.time()
+  run_batch(url_list = artist_urls3, indices = current_batch, update_data = add_data3)
+  print(sprintf("Batch %s / %s processed.", i, length(batches3)))
+  print(Sys.time() - start)
+  flush.console()
+}
 
 fwrite(lastfm, "lastfm_export.csv")
