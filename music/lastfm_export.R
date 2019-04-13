@@ -1,6 +1,3 @@
-# https://getsatisfaction.com/lastfm/topics/gettoptags-getting-wrong-tags
-# TODO wait for fix and test this locally
-
 library(curl)
 library(data.table)
 library(xml2)
@@ -51,22 +48,23 @@ add_data <- function(response){
   status <- xml_attr(xml_find_first(parsed_xml, "..//lfm"), "status")
   if(status == "ok"){
     # lastfm redirect you to different mbid than provided in duplicated artists
-    received_mbid <- xml_text(xml_find_first(parsed_xml, ".//artist/mbid"))
+    mbid_received <- xml_text(xml_find_first(parsed_xml, ".//artist/mbid"))
     name <- xml_text(xml_find_first(parsed_xml, ".//artist/name"))
-    listeners <- xml_text(xml_find_first(parsed_xml, ".//listeners"))
-    scrobbles <- xml_text(xml_find_first(parsed_xml, ".//playcount"))
+    listeners <- as.integer(xml_text(xml_find_first(parsed_xml, ".//listeners")))
+    scrobbles <- as.integer(xml_text(xml_find_first(parsed_xml, ".//playcount")))
     tags_vector <- xml_text(xml_find_all(parsed_xml, ".//tag/name"))
-    tags_length <- length(tags_vector)
+    tags_len <- length(tags_vector)
     tags <- paste(tags_vector, collapse = "; ")
     lastfm[
       page_index,
       `:=`(
-        received_mbid = received_mbid,
+        received_mbid = mbid_received,
         lastfm_by_mbid = TRUE,
         artist_lastfm = name,
         listeners_lastfm = listeners,
         scrobbles_lastfm = scrobbles,
-        tags_lastfm = tags
+        tags_lastfm = tags,
+        tags_length = tags_len
       )
       ]
   }else{
@@ -78,8 +76,7 @@ for (i in 1:length(batches)) {
   current_batch <- batches[[i]]
   start <- Sys.time()
   run_batch(url_list = artist_urls, indices = current_batch, update_data = add_data)
-  print(sprintf("Batch %s / %s processed.", i, length(batches)))
-  print(Sys.time() - start)
+  print(sprintf("Run I: Batch %s / %s processed. %s", i, length(batches), (Sys.time() - start)))
   flush.console()
 }
 
@@ -108,8 +105,8 @@ add_data2 <- function(response){
   status <- xml_attr(xml_find_first(parsed_xml, "..//lfm"), "status")
   if(status == "ok"){
     name <- xml_text(xml_find_first(parsed_xml, ".//artist/name"))
-    listeners <- xml_text(xml_find_first(parsed_xml, ".//listeners"))
-    scrobbles <- xml_text(xml_find_first(parsed_xml, ".//playcount"))
+    listeners <- as.integer(xml_text(xml_find_first(parsed_xml, ".//listeners")))
+    scrobbles <- as.integer(xml_text(xml_find_first(parsed_xml, ".//playcount")))
     lastfm[
       page_index,
       `:=`(
@@ -125,15 +122,14 @@ for (i in 1:length(batches2)) {
   current_batch <- batches2[[i]]
   start <- Sys.time()
   run_batch(url_list = artist_urls2, indices = current_batch, update_data = add_data2)
-  print(sprintf("Batch %s / %s processed.", i, length(batches2)))
-  print(Sys.time() - start)
+  print(sprintf("Run II: Batch %s / %s processed. %s", i, length(batches2), (Sys.time() - start)))
   flush.console()
 }
 
 # if there are less then 5 in earlier response it means that's everything, no need to call
 tag_indices <- lastfm[, which(!is.na(listeners_lastfm) & tags_length == 5)]
 
-artist_urls3 <- lastfm[!is.na(listeners_lastfm),
+artist_urls3 <- lastfm[tag_indices,
   ifelse(
     lastfm_by_mbid,
     paste0(
@@ -174,8 +170,7 @@ for (i in 1:length(batches3)) {
   current_batch <- batches3[[i]]
   start <- Sys.time()
   run_batch(url_list = artist_urls3, indices = current_batch, update_data = add_data3)
-  print(sprintf("Batch %s / %s processed.", i, length(batches3)))
-  print(Sys.time() - start)
+  print(sprintf("Run III: Batch %s / %s processed. %s", i, length(batches3), (Sys.time() - start)))
   flush.console()
 }
 
