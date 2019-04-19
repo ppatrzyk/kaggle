@@ -1,4 +1,5 @@
 library(data.table)
+
 lfm <- fread("lastfm_export.csv", encoding = 'UTF-8')
 
 # tag fix
@@ -10,12 +11,17 @@ lfm[tags_length == 0 | is.na(tags_length), tags_lastfm := NA]
 lfm[, tags_length := NULL]
 lfm[, tags_lastfm_all := NULL]
 lfm[tags_mb == '', tags_mb := NA]
-lfm[, tags_mb_count := NA_integer_]
-for (i in 1:lfm[, .N]) {
-  mbtags <- lfm[i, tags_mb]
-  taglenghth <- length(unlist(strsplit(mbtags, "; ")))
-  set(lfm, i, 'tags_mb_count', taglenghth)
-}
+lfm[,
+  tags_mb_count := ifelse(
+    is.na(tags_mb),
+    0,
+    (lengths(regmatches(tags_mb, gregexpr(";", lfm$tags_mb))) + 1)
+  )
+]
+
+# country fix
+lfm[country_mb == '', country_mb := NA]
+test <- lfm[, .N, by = country_mb][order(N, decreasing = TRUE), ]
 
 # duplicate fix
 # Problem: lastfm redirects to incorrect mbid
@@ -48,10 +54,12 @@ duplicate_all <- nonna[
 ][order(listeners_lastfm, decreasing = TRUE), ]
 rm(nonna)
 
+# TODO rewrite compare countries mb vs last fm
 duplicated_artists <- duplicate_all[, unique(artist_lastfm)]
 lfm[, ambiguous := NA]
 lfm[!(artist_lastfm %in% duplicated_artists), ambiguous := FALSE]
-for (artist in duplicated_artists) {
+for (i in 1:length(duplicated_artists)) {
+  artist <- duplicated_artists[i]
   tag_max <- lfm[artist_lastfm == artist, max(tags_mb_count)]
   index <- which(lfm$artist_lastfm == artist & lfm$tags_mb_count == tag_max)
   if(length(index) > 1){
@@ -62,7 +70,9 @@ for (artist in duplicated_artists) {
     garbage <- which(lfm$artist_lastfm == artist & lfm$tags_mb_count != tag_max)
     lfm[garbage, c('listeners_lastfm', 'scrobbles_lastfm', 'tags_lastfm') := NA]
   }
+  if(i %% 1000 == 0){
+    print(paste0(i, '/', lfm[, .N]))
+  }
 }
-# TODO compare with duplicate_all whether this is correct
 
 # lfm <- lfm[order(scrobbles_lastfm, decreasing = TRUE), ]
