@@ -49,6 +49,7 @@ tags <- lfm[!is.na(tags_lastfm), tags_lastfm]
 cores <- detectCores()
 cl <- makeCluster(cores[1])
 registerDoSNOW(cl)
+pb <- txtProgressBar(max = length(tags), style = 3)
 progress <- function(n) setTxtProgressBar(pb, n)
 opts <- list(progress = progress)
 countries <- foreach(
@@ -64,6 +65,7 @@ stopCluster(cl)
 
 lfm[, country_lastfm := NA_character_]
 lfm[!is.na(tags_lastfm), country_lastfm := unname(countries[, 1])]
+lfm[country_lastfm == '', country_lastfm := NA_character_]
 
 # duplicate fix
 # Problem: lastfm redirects to incorrect mbid
@@ -80,7 +82,8 @@ lfm <- merge(lfm, count_names, all.x = TRUE, by = 'artist_lastfm')
 rm(count_names)
 lfm[!is.na(scrobbles_lastfm), .N, by = .(artist_mb_unique, artist_lastfm_unique)]
 
-# this is for inspection
+# duplicate inspection
+lfm[, orig_index := 1:.N]
 nonna <- lfm[!is.na(artist_lastfm), ]
 duplicate_all <- nonna[
   duplicated(
@@ -89,33 +92,72 @@ duplicate_all <- nonna[
     nonna[, .(artist_lastfm)], fromLast = TRUE
   ), 
   .(
-    artist_lastfm, artist_mb, 
+    orig_index, artist_lastfm, artist_mb, 
     country_lastfm, country_mb, 
     artist_lastfm_unique, artist_mb_unique, 
     listeners_lastfm, tags_mb_count
   )
 ][order(listeners_lastfm, decreasing = TRUE), ]
 rm(nonna)
+duplicate_all[,
+  country_match := as.logical(mapply(
+    grepl, 
+    country_mb, 
+    country_lastfm, 
+    ignore.case = TRUE
+  ))
+]
+duplicate_all[is.na(country_match), country_match := FALSE]
+duplicate_all <- duplicate_all[order(tags_mb_count, decreasing = TRUE), ]
+duplicate_all[, mbduplicate := FALSE]
+duplicate_all[!is.na(country_mb) & duplicated(duplicate_all[, .(artist_mb, country_mb)]), mbduplicate := TRUE]
+duplicate_all <- duplicate_all[order(listeners_lastfm, decreasing = TRUE), ]
+duplicate_all[, tagmax := max(tags_mb_count), by = artist_lastfm]
+duplicate_all[, tagmax := (tags_mb_count == tagmax)]
+duplicate_all[, .N, by = .(country_match, tagmax)]
 
-# TODO rewrite compare countries mb vs last fm
-duplicated_artists <- duplicate_all[, unique(artist_lastfm)]
-lfm[, ambiguous := NA]
-lfm[!(artist_lastfm %in% duplicated_artists), ambiguous := FALSE]
-for (i in 1:length(duplicated_artists)) {
-  artist <- duplicated_artists[i]
-  tag_max <- lfm[artist_lastfm == artist, max(tags_mb_count)]
-  index <- which(lfm$artist_lastfm == artist & lfm$tags_mb_count == tag_max)
-  if(length(index) > 1){
-    lfm[artist_lastfm == artist, ambiguous := TRUE]
-    next
-  }else{
-    lfm[artist_lastfm == artist, ambiguous := FALSE]
-    garbage <- which(lfm$artist_lastfm == artist & lfm$tags_mb_count != tag_max)
-    lfm[garbage, c('listeners_lastfm', 'scrobbles_lastfm', 'tags_lastfm') := NA]
-  }
-  if(i %% 1000 == 0){
-    print(paste0(i, '/', lfm[, .N]))
-  }
-}
+match_counts <- duplicate_all[
+  mbduplicate == FALSE,
+  .(
+    country_matches = sum(country_match), 
+    tagmax_matches = sum(tagmax), 
+    duplicates = .N
+  ), 
+  by = artist_lastfm
+]
+duplicate_all <- merge(
+  duplicate_all, match_counts, 
+  all.x = TRUE, by = 'artist_lastfm'
+)[order(listeners_lastfm, decreasing= TRUE), ]
+rm(match_counts)
 
-# lfm <- lfm[order(scrobbles_lastfm, decreasing = TRUE), ]
+duplicate_all[, true_artist := (
+  country_match & 
+    tagmax & 
+    (country_matches == 1) & 
+    (tagmax_matches == 1)
+)]
+duplicate_all[, true_identified := sum(true_artist), by = artist_lastfm]
+duplicate_all[, removal := !true_artist & true_identified]
+manual_removal <- c(1328753, 1328754)
+removal <- c(duplicate_all[removal == TRUE, orig_index], manual_removal)
+ambiguous <- setdiff(duplicate_all[true_identified == 0, orig_index], c(1328752, manual_removal))
+
+lfm[removal, c("artist_lastfm", "listeners_lastfm", "scrobbles_lastfm", "tags_lastfm", "lastfm_by_mbid") := NA]
+lfm[, ambiguous_artist := FALSE]
+lfm[ambiguous, ambiguous_artist := TRUE]
+
+lfm[,
+  c(
+    "artist_mb_repeats",
+    "artist_mb_unique",
+    "received_mbid",
+    "tags_mb_count",
+    "artist_lastfm_repeats",
+    "artist_lastfm_unique",
+    "orig_index"
+  ) := NULL
+]
+
+lfm <- lfm[order(listeners_lastfm, decreasing = TRUE), ]
+fwrite(lfm, 'artists.csv')
