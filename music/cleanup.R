@@ -1,6 +1,10 @@
 library(data.table)
+library(foreach)
+library(parallel)
+library(doSNOW)
 
 lfm <- fread("lastfm_export.csv", encoding = 'UTF-8')
+countries <- fread('countries.csv')
 
 # tag fix
 lfm[
@@ -20,8 +24,46 @@ lfm[,
 ]
 
 # country fix
-lfm[country_mb == '', country_mb := NA]
-test <- lfm[, .N, by = country_mb][order(N, decreasing = TRUE), ]
+lfm[country_mb %in% c('', '[Worldwide]'), country_mb := NA]
+lfm[grepl('Kingdom.*Netherlands', country_mb), country_mb := 'Netherlands']
+lfm[grepl('Ivoire', country_mb), country_mb := 'Ivory Coast']
+# test <- lfm[, .N, by = country_mb][order(N, decreasing = TRUE), ]
+patterns <- countries[,
+  .(pattern = paste0(sprintf('[ ;]%s[ ;]', adjectival), collapse = '|')), 
+  by = country
+]
+patterns[, pattern := paste(pattern, sprintf('[ ;]%s[ ;]', country), sep = '|')]
+rm(countries)
+get_country <- function(tags) {
+  if(is.na(tags) | tags == ''){
+    return(NA_character_)
+  }
+  matches <- patterns[,
+    grepl(pattern, tags, ignore.case = TRUE), 
+    by = country
+  ][V1 == TRUE, country]
+  return(paste(sort(matches), collapse = '; '))
+}
+
+tags <- lfm[!is.na(tags_lastfm), tags_lastfm]
+cores <- detectCores()
+cl <- makeCluster(cores[1])
+registerDoSNOW(cl)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+countries <- foreach(
+  i = 1:length(tags), 
+  .packages = 'data.table', 
+  .combine = rbind, 
+  .options.snow = opts
+) %dopar% {
+  get_country(tags[i])
+}
+close(pb)
+stopCluster(cl)
+
+lfm[, country_lastfm := NA_character_]
+lfm[!is.na(tags_lastfm), country_lastfm := unname(countries[, 1])]
 
 # duplicate fix
 # Problem: lastfm redirects to incorrect mbid
@@ -47,7 +89,8 @@ duplicate_all <- nonna[
     nonna[, .(artist_lastfm)], fromLast = TRUE
   ), 
   .(
-    artist_lastfm, artist_mb, country_mb, 
+    artist_lastfm, artist_mb, 
+    country_lastfm, country_mb, 
     artist_lastfm_unique, artist_mb_unique, 
     listeners_lastfm, tags_mb_count
   )
