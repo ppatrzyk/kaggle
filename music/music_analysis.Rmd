@@ -1,5 +1,5 @@
 ---
-title: "Music Across the World"
+title: "Music Production Across the World"
 author: "Piotr Patrzyk"
 output: 
   html_document:
@@ -8,9 +8,59 @@ output:
 
 ## Introduction
 
-Todo
+An exploratory analysis of data on the popularity of musical artists. Where do the most polular artists come from? Which musical genres are the most popular? Are musical genres tied to specific countries? These are the questions investigated in this kernel.
+
+First I read and prepare the data. This includes:
+
+- cleaning duplicates in artists (see description of the dataset),
+- establishing country of origin,
+- establishing single genre from tags.
 
 ```{r dataload, echo=FALSE}
-print(2)
+library(data.table)
+library(ggplot2)
+library(leaflet)
+library(geojsonio)
+
+lfm <- fread('artists.csv', encoding = 'UTF-8', na.strings = '')
 ```
 
+
+
+```{r countryexample, echo=TRUE}
+lfm[
+  artist_mb %in% c('Rihanna', 'System of a Down', 'Snow Patrol'),
+  .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
+]
+```
+
+The approach is the following:
+
+- if MusicBrainz country is contained in last.fm tags, this one chosen,
+- else if there is only one country in last.fm tags, this one is chosen,
+- if above does not work, fall back to MusicBrainz country.
+
+```{r countryfix, echo=TRUE}
+# unify countries
+lfm[, country := NA_character_]
+lfm[
+  mapply(grepl, country_mb, country_lastfm) | is.na(country_lastfm),
+  country := country_mb
+]
+lfm[
+  is.na(country) & !grepl(';', country_lastfm),
+  country := country_lastfm
+]
+lfm[
+  is.na(country),
+  country := country_mb
+]
+
+# this approach creates duplicates that need to be trashed
+# TODO: fix new duplicates, resolve conflicts e.g. Coma
+```
+
+
+## Popularity distribution
+
+very few artists generate the majority of world's scrobbles, while the vast majority of artists have a very small number of listeners and scrobbles.
