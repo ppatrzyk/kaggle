@@ -29,10 +29,10 @@ lfm[grepl('Kingdom.*Netherlands', country_mb), country_mb := 'Netherlands']
 lfm[grepl('Ivoire', country_mb), country_mb := 'Ivory Coast']
 # test <- lfm[, .N, by = country_mb][order(N, decreasing = TRUE), ]
 patterns <- countries[,
-  .(pattern = paste0(sprintf('[ ;]%s[ ;]', adjectival), collapse = '|')), 
+  .(pattern = paste0(sprintf('[ ;^]%s[ ;$]', adjectival), collapse = '|')), 
   by = country
 ]
-patterns[, pattern := paste(pattern, sprintf('[ ;]%s[ ;]', country), sep = '|')]
+patterns[, pattern := paste(pattern, sprintf('[ ;^]%s[ ;$]', country), sep = '|')]
 rm(countries)
 get_country <- function(tags) {
   if(is.na(tags) | tags == ''){
@@ -131,17 +131,52 @@ duplicate_all <- merge(
 )[order(listeners_lastfm, decreasing= TRUE), ]
 rm(match_counts)
 
-duplicate_all[, true_artist := (
-  country_match & 
+duplicate_all[,
+  lastm_country_present := any(!is.na(country_lastfm)),
+  by = artist_lastfm
+]
+
+# if there is an unique lastfm country, pick this one,
+# else if country NA, pick most popular by tags
+duplicate_all[, true_artist := ifelse(
+  lastm_country_present,
+  (
+    country_match & 
     tagmax & 
     (country_matches == 1) & 
     (tagmax_matches == 1)
+  ),
+  (
+    tagmax & (tagmax_matches == 1)
+  )
 )]
 duplicate_all[, true_identified := sum(true_artist), by = artist_lastfm]
+
+# 2nd round by string distance
+duplicate_all[, similarity := NA_integer_]
+duplicate_all[
+  true_identified == 0, 
+  similarity := as.integer(mapply(adist, artist_mb, artist_lastfm))
+]
+duplicate_all[, simmin := min(similarity), by = artist_lastfm]
+duplicate_all[, simmin := (similarity == simmin)]
+duplicate_all[
+  !is.na(similarity), 
+  similarity_matches := sum(simmin),
+  by = artist_lastfm
+]
+duplicate_all[
+  !is.na(similarity), 
+  true_artist := (
+    similarity_matches == 1 &
+      simmin == TRUE
+  )
+]
+duplicate_all[, true_identified := sum(true_artist), by = artist_lastfm]
+
 duplicate_all[, removal := !true_artist & true_identified]
-manual_removal <- c(1328753, 1328754)
-removal <- c(duplicate_all[removal == TRUE, orig_index], manual_removal)
-ambiguous <- setdiff(duplicate_all[true_identified == 0, orig_index], c(1328752, manual_removal))
+removal <- duplicate_all[removal == TRUE, orig_index]
+ambiguous <- duplicate_all[true_identified == 0, orig_index]
 
 lfm[removal, c("artist_lastfm", "listeners_lastfm", "scrobbles_lastfm", "tags_lastfm", "lastfm_by_mbid") := NA]
 lfm[, ambiguous_artist := FALSE]
@@ -155,9 +190,25 @@ lfm[,
     "tags_mb_count",
     "artist_lastfm_repeats",
     "artist_lastfm_unique",
-    "orig_index"
+    "orig_index",
+    "lastfm_by_mbid"
   ) := NULL
 ]
 
 lfm <- lfm[order(listeners_lastfm, decreasing = TRUE), ]
+setcolorder(
+  lfm,
+  c(
+    "mbid",
+    "artist_mb",
+    "artist_lastfm",
+    "country_mb",
+    "country_lastfm",
+    "tags_mb",
+    "tags_lastfm",
+    "listeners_lastfm",
+    "scrobbles_lastfm",
+    "ambiguous_artist"
+  )
+)
 fwrite(lfm, 'artists.csv')
