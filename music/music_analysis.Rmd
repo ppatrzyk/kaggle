@@ -72,7 +72,8 @@ The approach is the following:
 
 - if there is only one MusicBrainz country and it is contained in last.fm tags, this one is chosen,
 - else if there is only one country in last.fm tags, this one is chosen,
-- else if there is only one country in MusicBrainz tags, this one is chosen.
+- else if there is only one country in MusicBrainz tags, this one is chosen,
+- to resolve conflicts in remaining entries, the most frequest country in last.fm tags is chosen.
 
 ```{r countryfix, echo=TRUE}
 # unify countries
@@ -90,7 +91,26 @@ lfm[
   country := country_mb
 ]
 
-#TODO last step by first match in lastfm tags
+countries <- fread('https://raw.githubusercontent.com/ppatrzyk/kaggle/master/music/countries.csv', encoding = 'UTF-8')
+patterns <- countries[,
+  .(pattern = paste0(sprintf('[ ;^]%s[ ;$]', adjectival), collapse = '|')), 
+  by = country
+]
+patterns[, pattern := paste(pattern, sprintf('[ ;^]%s[ ;$]', country), sep = '|')]
+rm(countries)
+
+first_match <- function(tags) {
+  match <- patterns[,
+    regexpr(pattern, tags, ignore.case = TRUE), 
+    by = country
+  ][V1 != -1, ][order(V1), ][1L, country]
+  return(match)
+}
+
+lfm[
+  is.na(country) & !is.na(country_lastfm),
+  country := sapply(tags_lastfm, first_match, USE.NAMES = FALSE)
+]
 
 ```
 
