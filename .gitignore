@@ -1,3 +1,4 @@
 **/.Rhistory
 **/*.csv
+!music/countries.csv
 **/*.html

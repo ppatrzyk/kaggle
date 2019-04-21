@@ -12,7 +12,7 @@ An exploratory analysis of data on the popularity of musical artists. Where do t
 
 First I read and prepare the data. This includes:
 
-- cleaning duplicates in artists (see description of the dataset),
+- cleaning duplicates in artists,
 - establishing country of origin,
 - establishing single genre from tags.
 
@@ -25,26 +25,60 @@ library(geojsonio)
 lfm <- fread('artists.csv', encoding = 'UTF-8', na.strings = '')
 ```
 
+Due to the fact that last.fm does dot disambiguate between different artists that have the same name (see dataset description), dataset contains some artists with duplicated listeners/scrobbles count, coming from the aggregate profile. For example:
 
+```{r}
+lfm[
+  artist_lastfm == 'Phoenix', 
+  .(artist_mb, artist_lastfm, country_mb, country_lastfm, listeners_lastfm, scrobbles_lastfm)
+]
+```
+
+I collapse ambiguous artists (`ambiguous_artist == TRUE`) into one row per artist name.
+
+```{r collapseartists, echo=TRUE}
+lfm[, mbid := NULL]
+fix <- lfm[ambiguous_artist == TRUE, ]
+lfm <- lfm[ambiguous_artist == FALSE, ]
+
+fix <- fix[,
+  .(
+    artist_mb = paste(unique(na.omit(artist_mb)), collapse = '; '),
+    country_mb = paste(unique(na.omit(country_mb)), collapse = '; '),
+    country_lastfm = paste(unique(na.omit(country_lastfm)), collapse = '; '),
+    tags_mb = paste(na.omit(tags_mb), collapse = '; '),
+    tags_lastfm = paste(unique(na.omit(tags_lastfm)), collapse = '; '),
+    listeners_lastfm = max(listeners_lastfm, na.rm = TRUE),
+    scrobbles_lastfm = max(scrobbles_lastfm, na.rm = TRUE),
+    ambiguous_artist = TRUE
+  ),
+  by = artist_lastfm
+]
+
+lfm <- rbindlist(list(lfm, fix), fill = TRUE)
+rm(fix)
+```
+
+Next I identify single country an artist comes from. The dataset contains conflicting information about artists' origin. Sometimes there is a legitimate ambiguity in what should be chosen, in other cases there is an incorrect information due to factual errors or artist duplicites. In either case, these need to be unified. Examples of problematic data:
 
 ```{r countryexample, echo=TRUE}
 lfm[
-  artist_mb %in% c('Rihanna', 'System of a Down', 'Snow Patrol'),
+  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira'),
   .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
 ]
 ```
 
 The approach is the following:
 
-- if MusicBrainz country is contained in last.fm tags, this one chosen,
+- if there is only one MusicBrainz country and it is contained in last.fm tags, this one is chosen,
 - else if there is only one country in last.fm tags, this one is chosen,
-- if above does not work, fall back to MusicBrainz country.
+- else if there is only one country in MusicBrainz tags, this one is chosen.
 
 ```{r countryfix, echo=TRUE}
 # unify countries
 lfm[, country := NA_character_]
 lfm[
-  mapply(grepl, country_mb, country_lastfm) | is.na(country_lastfm),
+  !grepl(';', country_mb) & (mapply(grepl, country_mb, country_lastfm) | is.na(country_lastfm)),
   country := country_mb
 ]
 lfm[
@@ -52,12 +86,12 @@ lfm[
   country := country_lastfm
 ]
 lfm[
-  is.na(country),
+  is.na(country) & !grepl(';', country_mb),
   country := country_mb
 ]
 
-# this approach creates duplicates that need to be trashed
-# TODO: fix new duplicates, resolve conflicts e.g. Coma
+#TODO last step by first match in lastfm tags
+
 ```
 
 
