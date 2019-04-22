@@ -27,12 +27,11 @@ lfm[,
 lfm[country_mb %in% c('', '[Worldwide]'), country_mb := NA]
 lfm[grepl('Kingdom.*Netherlands', country_mb), country_mb := 'Netherlands']
 lfm[grepl('Ivoire', country_mb), country_mb := 'Ivory Coast']
-# test <- lfm[, .N, by = country_mb][order(N, decreasing = TRUE), ]
 patterns <- countries[,
-  .(pattern = paste0(sprintf('[ ;^]%s[ ;$]', adjectival), collapse = '|')), 
+  .(pattern = paste0(sprintf('( |;|^)%s( |;|$)', adjectival), collapse = '|')), 
   by = country
 ]
-patterns[, pattern := paste(pattern, sprintf('[ ;^]%s[ ;$]', country), sep = '|')]
+patterns[, pattern := paste(pattern, sprintf('( |;|^)%s( |;|$)', country), sep = '|')]
 rm(countries)
 get_country <- function(tags) {
   if(is.na(tags) | tags == ''){
