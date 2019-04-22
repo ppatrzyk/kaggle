@@ -120,7 +120,7 @@ lfm[
 
 print('Example fo resolving conflicts:')
 lfm[
-  artist_lastfm %in% c('Arkona', 'Coma', 'Garbage', 'Ikon'),
+  artist_lastfm %in% c('Arkona', 'Garbage', 'Ikon'),
   .(artist_lastfm, country_mb, country_lastfm, country)
 ]
 
@@ -160,14 +160,31 @@ The approach to establishing a single genre is the following:
 ```{r genreaggregation, echo=TRUE}
 filter_pattern <- paste(
   patterns[, paste(pattern, collapse = '|')],
-  # TODO filter bad tags
+  '^all$', "^\\d+[s]?$", "live", "male", "europe", "listen", "eurovision", "^world$", "balkan", "participant", "gorgeous", "factor", "shqip",
+  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century",
+  "recording", "creative", "espa", "francai", "deutsch", "portugu", "eesti", "azeri", "svenskt", "^love$", "cover",
+  "funny", "humo", "super", "porn", "boobs", "science", "muzika", "muzyka", "podcast", "test", "shit", "festival", "album",
+  "iskelma", "comedy", "composer", "dansk", "siberia", "norsk", "polsk", "^sex$", "epic", "parody",
+  "caucasia", "albani", "suomi", "duet", "prank", "spotify",
+  "^music$", "5432fun", "easy listening", "schlager", "oldies", "^idol$", "liedermacher", "^everything$", "^nordic$", "^amazing$",
   sep = '|'
 )
 lfm[
   !is.na(tags_lastfm),
   paste0('tag', 1:10) := tstrsplit(tolower(tags_lastfm), '; ', keep = 1:10)
 ]
-lfm[, genre := tag1]
+lfm[!is.na(tags_lastfm), genre := tag1]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag2]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag3]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag4]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag5]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag6]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag7]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag8]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag9]
+lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag10]
+lfm[, paste0('tag', 1:10) := NULL]
+# TODO when na, fall back to musicbrainz tag, rewrite with flag-setting (?)
 ```
 
 
