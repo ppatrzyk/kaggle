@@ -6,9 +6,13 @@ output:
     keep_md: true
 ---
 
+TODO: artist name duplicites stats before cleaning step
+
 ## Introduction
 
 An exploratory analysis of data on the popularity of musical artists. Where do the most polular artists come from? Which musical genres are the most popular? Are musical genres tied to specific countries? These are the questions investigated in this kernel.
+
+## Preparing data
 
 First I read and prepare the data. This includes:
 
@@ -75,6 +79,8 @@ The approach is the following:
 - else if there is only one country in MusicBrainz tags, this one is chosen,
 - to resolve conflicts in remaining entries, the most frequest country in last.fm tags is chosen.
 
+Note, as there is no way to automatically verify whether multiple countries in last.fm tags relate to one artist or multiple artists sharing one profile, in the fourth step we might end up with an overestimate of artist popularity (only one end up being chosen, but their scobble count come from a shared profile).
+
 ```{r countryfix, echo=TRUE}
 # unify countries
 lfm[, country := NA_character_]
@@ -112,9 +118,65 @@ lfm[
   country := sapply(tags_lastfm, first_match, USE.NAMES = FALSE)
 ]
 
+print('Example fo resolving conflicts:')
+lfm[
+  artist_lastfm %in% c('Arkona', 'Coma', 'Garbage', 'Ikon'),
+  .(artist_lastfm, country_mb, country_lastfm, country)
+]
+
+```
+
+In the next step I assign genre to each artist. This step requires investigating all tags and identifying unique genres in them. This requires some aggregation over different spelling, qualifiers, etc. First I read all tags to a separate data.table.
+
+```{r tagexploration, echo=TRUE}
+tags_lfm <- as.data.table(table(tolower(
+  lfm[
+    !is.na(tags_lastfm),
+    unlist(strsplit(tags_lastfm, split = '; '))
+  ]
+)))[order(N, decreasing = TRUE), ]
+
+print('20 most frequent:')
+head(tags_lfm, 20)
+print(paste('Unique tags (case insensitive):', tags_lfm[, .N]))
+print(paste0('Tags used only once: ', round(100 * (tags_lfm[N == 1, .N] / tags_lfm[, .N]), 2), '%'))
+print(paste0('Used at least 10 times: ', tags_lfm[N >= 10, .N], ' (', round(100 * (tags_lfm[N >= 10, .N] / tags_lfm[, .N]), 2), '%)'))
+```
+
+A quick glance at tags reveals that a lot of information is not related to the genre of music (e.g., *(fe)male vocalists*, *seen live*, *under 2000 listeners*, etc.) and that there is a lot of 'compound' tags -- instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags such as *true oldschool norwegian black metal* (trve, tru, troo, tr00 are also observed).
+
+```{r blackmetalexample, echo=TRUE}
+print(paste("Unique \'black metal\' tags:", tags_lfm[grepl('black.*metal', V1), .N]))
+head(tags_lfm[grepl('black.*metal', V1), ], 10)
+```
+
+The approach to establishing a single genre is the following:
+
+- for each artist, get a rank of tags,
+- pick the most popular tag,
+- if the picked tag is not related to genre (see above), iteratively replace by next tag in the rank,
+- aggragate tags
+
+```{r genreaggregation, echo=TRUE}
+filter_pattern <- paste(
+  patterns[, paste(pattern, collapse = '|')],
+  # TODO filter bad tags
+  sep = '|'
+)
+lfm[
+  !is.na(tags_lastfm),
+  paste0('tag', 1:10) := tstrsplit(tolower(tags_lastfm), '; ', keep = 1:10)
+]
+lfm[, genre := tag1]
 ```
 
 
 ## Popularity distribution
 
 very few artists generate the majority of world's scrobbles, while the vast majority of artists have a very small number of listeners and scrobbles.
+
+## Geography of music production
+
+## Conclusion
+
+Last.fm users do not constitute representative sample of world's music listeners. Hence, the number of scrobbles is an imperfect proxy to the number of times given artist has been listened to.
