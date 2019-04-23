@@ -7,6 +7,8 @@ output:
 ---
 
 TODO: artist name duplicites stats before cleaning step
+TODO2: east germany, czechoslovakia, soviet union fix
+TODO3 search country also in mb tags
 
 ## Introduction
 
@@ -22,9 +24,12 @@ First I read and prepare the data. This includes:
 
 ```{r dataload, echo=FALSE}
 library(data.table)
-library(ggplot2)
-library(leaflet)
 library(geojsonio)
+library(ggplot2)
+library(viridis)
+library(hexbin)
+library(shiny)
+library(leaflet)
 
 lfm <- fread('artists.csv', encoding = 'UTF-8', na.strings = '')
 ```
@@ -99,10 +104,10 @@ lfm[
 
 countries <- fread('https://raw.githubusercontent.com/ppatrzyk/kaggle/master/music/countries.csv', encoding = 'UTF-8')
 patterns <- countries[,
-  .(pattern = paste0(sprintf('[ ;^]%s[ ;$]', adjectival), collapse = '|')), 
+  .(pattern = paste0(sprintf('( |;|^)%s( |;|$)', adjectival), collapse = '|')), 
   by = country
 ]
-patterns[, pattern := paste(pattern, sprintf('[ ;^]%s[ ;$]', country), sep = '|')]
+patterns[, pattern := paste(pattern, sprintf('( |;|^)%s( |;|$)', country), sep = '|')]
 rm(countries)
 
 first_match <- function(tags) {
@@ -143,7 +148,7 @@ print(paste0('Tags used only once: ', round(100 * (tags_lfm[N == 1, .N] / tags_l
 print(paste0('Used at least 10 times: ', tags_lfm[N >= 10, .N], ' (', round(100 * (tags_lfm[N >= 10, .N] / tags_lfm[, .N]), 2), '%)'))
 ```
 
-A quick glance at tags reveals that a lot of information is not related to the genre of music (e.g., *(fe)male vocalists*, *seen live*, *under 2000 listeners*, etc.) and that there is a lot of 'compound' tags -- instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags such as *true oldschool norwegian black metal* (trve, tru, troo, tr00 are also observed).
+A quick glance at tags reveals that a lot of information is not related to the genre of music (e.g., *(fe)male vocalists*, *seen live*, *under 2000 listeners*, etc.) and that (unsurprisibgly) people do not know how to use tags. Specifically, there are a lot of 'compound' tags -- for instance, instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags such as *true oldschool norwegian black metal* (trve, tru, troo, tr00 are also observed). As a consequence, there are multiple tags referring (roughly) to the same genre.
 
 ```{r blackmetalexample, echo=TRUE}
 print(paste("Unique \'black metal\' tags:", tags_lfm[grepl('black.*metal', V1), .N]))
@@ -152,47 +157,305 @@ head(tags_lfm[grepl('black.*metal', V1), ], 10)
 
 The approach to establishing a single genre is the following:
 
-- for each artist, get a rank of tags,
+- for each artist, get a rank of last.fm tags,
 - pick the most popular tag,
 - if the picked tag is not related to genre (see above), iteratively replace by next tag in the rank,
-- aggragate tags
+- if establishing genre form last.fm tags failed, repeat the process on musicbrainz tag data.
 
-```{r genreaggregation, echo=TRUE}
+```{r genreaggregation1, echo=TRUE}
+# some of more common 'bad' tags found thorough manual inspection
 filter_pattern <- paste(
   patterns[, paste(pattern, collapse = '|')],
-  '^all$', "^\\d+[s]?$", "live", "male", "europe", "listen", "eurovision", "^world$", "balkan", "participant", "gorgeous", "factor", "shqip",
-  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century",
-  "recording", "creative", "espa", "francai", "deutsch", "portugu", "eesti", "azeri", "svenskt", "^love$", "cover",
-  "funny", "humo", "super", "porn", "boobs", "science", "muzika", "muzyka", "podcast", "test", "shit", "festival", "album",
-  "iskelma", "comedy", "composer", "dansk", "siberia", "norsk", "polsk", "^sex$", "epic", "parody",
-  "caucasia", "albani", "suomi", "duet", "prank", "spotify",
-  "^music$", "5432fun", "easy listening", "schlager", "oldies", "^idol$", "liedermacher", "^everything$", "^nordic$", "^amazing$",
+  '^all$', "^\\d+\'*[s]?$", "live", "male", "europe", "listen", "eurovision", "^world$", "balkan", "participant", "gorgeous", "factor", "shqip", "^brasil$", "lyricist", "actress", "welsh",
+  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century", '^african*$', 'asian*$', '^cute$', "photographer", "pianist", "francophone",
+  "recording", "creative", "espa", "francai", "deutsch", "portugu", "eesti", "azeri", "svenskt", "^love$", "cover", "unknown", "remix", "musician", "to.*clean.*up", "akb48", "volalist", "doujin",
+  "funny", "humo", "super", "porn", "boobs", "science", "^muz[iy]ka$", "podcast", "test", "shit", "festival", "album", "^crap$", "^conductor$", "^guitar$", "arab", "london", "disney", "minnesota", "bogus", "guitar",
+  "iskelma", "comedy", "composer", "dansk", "siberia", "norsk", "polsk", "^sex[y]*$", "epic", "parody",
+  "caucasia", "albani", "suomi", "duet", "prank", "spotify", "am.*ricain", "game.*music",
+  "^music$", "5432fun", "schlager", "oldies", "^idol$", "liedermacher", "^everything$", "^nordic$", "^amazing$", "mistagged", "^lovely$", "check", "<3", "^latin$", 'video.*game', "detroit", "mandarin", "^ost$",
+  "likedis.*auto", "production.*music", "^english$", "^session$", "^england$", "kabaret", "youtube",
   sep = '|'
 )
+rm(patterns)
+
 lfm[
   !is.na(tags_lastfm),
   paste0('tag', 1:10) := tstrsplit(tolower(tags_lastfm), '; ', keep = 1:10)
 ]
-lfm[!is.na(tags_lastfm), genre := tag1]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag2]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag3]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag4]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag5]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag6]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag7]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag8]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag9]
-lfm[!is.na(tags_lastfm) & grepl(filter_pattern, genre, ignore.case = TRUE), genre := tag10]
+lfm[, genre := NA_character_]
+lfm[!is.na(tags_lastfm), genreset := FALSE]
+for (i in 1:10) {
+  lfm[genreset == FALSE, genre := get(paste0('tag', i))]
+  lfm[
+    genreset == FALSE & !grepl(filter_pattern, genre, ignore.case = TRUE), 
+    genreset := TRUE
+  ]
+  print(paste('run', i))
+}
 lfm[, paste0('tag', 1:10) := NULL]
-# TODO when na, fall back to musicbrainz tag, rewrite with flag-setting (?)
+
+# musicbrainz tags
+lfm[, genreset := NA]
+lfm[!is.na(tags_mb), genreset := FALSE]
+lfm[
+  !is.na(tags_mb),
+  paste0('tag', 1:5) := tstrsplit(tolower(tags_mb), '; ', keep = 1:5)
+]
+for (i in 1:5) {
+  lfm[genreset == FALSE, genre := get(paste0('tag', i))]
+  lfm[
+    genreset == FALSE & !grepl(filter_pattern, genre, ignore.case = TRUE), 
+    genreset := TRUE
+  ]
+  print(paste('run', i))
+}
+lfm[, paste0('tag', 1:5) := NULL]
+
+lfm[, genre := tolower(genre)]
 ```
 
+This approach yields `r lfm[, uniqueN(genre)]` unique genres, which are now aggregated. The approach here is to either find all instances of given genre via regex and unify all to one spelling (e.g., *hip-hop*), or if there are a lot of subtypes of given genre, retain some arbitrary number of most frequest ones and aggregate remainig ones into a general type (e.g., *metal*). Less frequent tags are aggregater as *other*. Two notes:
+
+- Some of these regex patterns are not perfect, but I checked manually what they match on this particular dataset so there should be no major errors,
+- I wanted to keep the number of unique genres minimal so there are some necessary arbitrary simplifications in this step (e.g., *brutal apocalyptic black gothic doom metal* becomes *black metal*).
+
+```{r genreaggregation1, echo=TRUE}
+lfm[
+  grepl("hip.*hop|( |;|^)rap( |;|$)", genre) &
+    !grepl("rapcore", genre),
+  genre := 'hip-hop'
+]
+
+lfm[grepl("r *n *b( |$)|r&b|rhytm.*&.*blues", genre), genre := 'rnb']
+lfm[grepl("jazz", genre), genre := 'jazz']
+lfm[grepl("reggae", genre), genre := 'reggae']
+lfm[grepl("volksmusik|world.*music", genre), genre := 'world music']
+lfm[grepl('worship|religi', genre), genre := 'worship']
+lfm[grepl('soul', genre), genre := 'soul']
+
+lfm[grepl('drum.*bass', genre), genre := 'drum and bass']
+lfm[grepl('dance', genre), genre := 'dance']
+lfm[grepl('dis[ck]o', genre), genre := 'disco']
+lfm[grepl('techno', genre), genre := 'techno']
+lfm[grepl('trance', genre), genre := 'trance']
+lfm[grepl('house', genre), genre := 'house']
+lfm[grepl('dark.*electro', genre), genre := 'dark electro']
+lfm[grepl('electro.*pop', genre), genre := 'electropop']
+lfm[grepl('electro.*punk', genre), genre := 'electropunk']
+lfm[
+  grepl('ele[ck]tro', genre) & !(genre %in% c('dark electro', 'electropop', 'electropunk')), 
+  genre := 'electronic'
+]
+
+lfm[grepl("t[h]*rash.*metal", genre), genre := 'thrash metal']
+lfm[grepl("black.*metal", genre), genre := 'black metal']
+lfm[grepl("death.*metal", genre), genre := 'death metal']
+lfm[grepl("gothic.*metal", genre), genre := 'gothic metal']
+lfm[grepl("heavy.*metal|nwobhm", genre), genre := 'heavy metal']
+metal_lookup <- lfm[
+  grepl("metal", genre), 
+  .N, 
+  by = genre
+][order(N, decreasing = TRUE), ]
+lfm[
+  genre %in% metal_lookup[N < 40, genre],
+  genre := 'metal'
+]
+rm(metal_lookup)
+
+lfm[grepl('indie.*rock|rock.*indie', genre), genre := 'indie']
+lfm[grepl('punk.*rock', genre), genre := 'punk']
+lfm[grepl('goth', genre) & !grepl('metal', genre), genre := 'gothic rock']
+lfm[grepl('rock.*rol', genre), genre := 'rock and roll']
+lfm[grepl('hard.*rock', genre), genre := 'hard rock']
+lfm[grepl('post.*rock', genre), genre := 'post-rock']
+
+
+rock_lookup <- lfm[
+  grepl("rock", genre), 
+  .N, 
+  by = genre
+][order(N, decreasing = TRUE), ]
+lfm[
+  genre %in% rock_lookup[N < 80, genre],
+  genre := 'rock'
+]
+rm(rock_lookup)
+
+lfm[grepl('post.*punk', genre), genre := 'post-punk']
+lfm[grepl('cold.*wave|zimna.*fala', genre), genre := 'coldwave']
+lfm[grepl('dark.*wave', genre), genre := 'darkwave']
+lfm[grepl('poetr|poezj', genre), genre := 'sung poetry']
+
+punk_lookup <- lfm[
+  grepl("punk", genre), 
+  .N, 
+  by = genre
+ ][order(N, decreasing = TRUE), ]
+lfm[
+  genre %in% punk_lookup[N < 20, genre],
+  genre := 'punk'
+]
+rm(punk_lookup)
+
+lfm[
+  grepl('pop', genre) & !(genre %in% c('electropop', 'synthpop')), 
+  genre := 'pop'
+]
+```
 
 ## Popularity distribution
 
-very few artists generate the majority of world's scrobbles, while the vast majority of artists have a very small number of listeners and scrobbles.
+As all would expect, the vast majority of artists have a very small number of listeners and scrobbles while there are few ones with extraordinary popularity. While this fact is a common knowledge, here we can get a tangible estimate of how this popularity is distributed.
+
+```{r popularitycdf, echo=TRUE}
+lfm[is.na(listeners_lastfm), listeners_lastfm := 0]
+lfm[is.na(scrobbles_lastfm), scrobbles_lastfm := 0]
+get_percentile <- lfm[, ecdf(listeners_lastfm)]
+lfm[, percentile := get_percentile(listeners_lastfm)]
+
+ecdf_plot <- ggplot(
+  lfm,
+  aes(x = listeners_lastfm, y = percentile)
+) +
+  coord_cartesian(
+    xlim = c(0, (10^5)/2)
+    # ylim = c(0, 1)
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, (10^5)/2, by = 1.25 * 10^4),
+    labels = c("0", "12.5k", "25k", "37.5k", "50k")
+  ) +
+  geom_line(
+    color = "black",
+    size = 1
+  ) +
+  labs(
+    title = "Empirical CDF",
+    x = "Number of listeners",
+    y = "Fraction of data"
+  ) +
+  annotate(
+    "segment",
+    x = 0,
+    xend = 1.3 * 10^6,
+    y = 1,
+    yend = 1,
+    size = 0.5,
+    linetype = "dashed"
+  ) +
+  theme_light()
+
+print(ecdf_plot)
+
+```
+
+Note that in Empirical CDF plot, x axis is pruned at 50,000 listeners -- this is approximately `r paste(round(100 * 50000 / lfm[1L, listeners_lastfm], 2), "%")` of how many listeners the top artist in dataset (i.e., Coldplay) has. Use the widget below to see how the world's scrobbles are concentrated.
+
+```{r percentilewidget, echo = TRUE}
+#TODO verify if this is correct
+
+numericInput(
+  inputId = "topartist_perc",
+  label = "Pick top % of artists",
+  width = "150px",
+  min = 0, max = 100, step = 0.1, value = 1
+)
+
+renderUI({
+  if(is.na(input$topartist_perc) | input$topartist_perc < 0 | input$topartist_perc > 100){
+    HTML("<p><i>Choose value between 0 and 100.</i></p>")
+  }else{
+    # compute value
+    top_x_scrobbles <- lfm[percentile >= (1 - input$topartist_perc / 100), sum(scrobbles_lastfm)]
+    all_scrobbles <- lfm[, sum(scrobbles_lastfm)]
+    scrobbles_perc <- round(
+      100 * top_x_scrobbles / all_scrobbles,
+      2
+    )
+    # generate message
+    HTML(
+      sprintf(
+        "<p>Top <b>%s</b>%% (i.e, %s out of %s) of artists generate <b>%s</b>%% of all scrobbles</p>",
+        input$topartist_perc,
+        display_values(lfm[percentile > (1 - input$topartist_perc / 100), .N]),
+        display_values(lfm[, .N]),
+        scrobbles_perc
+      )
+    )
+  }
+})
+```
+
+Another way to look at this is to see a scatterplot of listeners vs scrobbles for all artists in the world.
+
+```{r hexbinscatter, echo = TRUE}
+artist_label <- lfm[
+  order(scrobbles_lastfm, decreasing = TRUE), 
+][
+  1:8,
+  .(artist_lastfm, x = listeners_lastfm, y = scrobbles_lastfm)
+]
+
+hexbin_scatter <- ggplot(
+  lfm, aes(x = listeners_lastfm, y = scrobbles_lastfm)
+) +
+  stat_binhex(
+    show.legend = TRUE,
+    bins = 60,
+    color = "black"
+  ) +
+  scale_fill_gradientn(
+    name = "Number of artists\n(log scale)", trans = "log", 
+    colors = viridis_pal(alpha = 1, begin = 0, end = 1, direction = -1, option = "plasma")(10),
+    breaks = c(1, 100, 8000, 590000), labels = c(1, 100, 8000, 590000)
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 5 * 10^6, by = 10^6),
+    labels = paste0(0:5, "M")
+  ) + 
+  scale_y_continuous(
+    breaks = seq(0, 500 * 10^6, by = 10^8),
+    labels = paste0(seq(0, 500, by = 100), "M")
+  ) +
+  labs(
+    title = "Artist listeners and scrobbles",
+    x = "Number of listeners",
+    y = "Number of scrobbles"
+  ) + 
+  annotate(
+    "text",
+    x = artist_label$x,
+    y = artist_label$y,
+    label = artist_label$artist_lastfm,
+    size = 3.5
+  ) +
+  annotate(
+    "curve",
+    x = 0,
+    xend = 6 * -10^4,
+    y = 10^8, 
+    yend = 5 * 10^6,
+    size = 1,
+    arrow = arrow(length = unit(0.2, "cm"))
+  ) +
+  annotate(
+    "label", 
+    x = 0, 
+    y = 10^8, 
+    label = "98.7% of all\nartists",
+    # hardcoded here, for verification:
+    # ggplot_build(hexbin_scatter)$data[[1]]
+    size = 3.5
+  ) +
+  theme_light()
+
+print(hexbin_scatter)
+```
 
 ## Geography of music production
+
+
 
 ## Conclusion
 
