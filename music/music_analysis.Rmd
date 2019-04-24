@@ -6,9 +6,7 @@ output:
     keep_md: true
 ---
 
-TODO: artist name duplicites stats before cleaning step
 TODO2: east germany, czechoslovakia, soviet union fix
-TODO3 search country also in mb tags
 
 ## Introduction
 
@@ -22,13 +20,12 @@ First I read and prepare the data. This includes:
 - establishing country of origin,
 - establishing single genre from tags.
 
-```{r dataload, echo=FALSE}
+```{r dataload, echo=FALSE, message = FALSE, warning = FALSE}
 library(data.table)
 library(geojsonio)
 library(ggplot2)
 library(viridis)
 library(hexbin)
-library(shiny)
 library(leaflet)
 
 lfm <- fread('artists.csv', encoding = 'UTF-8', na.strings = '')
@@ -36,16 +33,46 @@ lfm <- fread('artists.csv', encoding = 'UTF-8', na.strings = '')
 
 Due to the fact that last.fm does dot disambiguate between different artists that have the same name (see dataset description), dataset contains some artists with duplicated listeners/scrobbles count, coming from the aggregate profile. For example:
 
-```{r}
+```{r duplicateexample, echo=FALSE}
 lfm[
-  artist_lastfm == 'Phoenix', 
+  artist_lastfm == 'First Aid Kit', 
   .(artist_mb, artist_lastfm, country_mb, country_lastfm, listeners_lastfm, scrobbles_lastfm)
 ]
 ```
 
-I collapse ambiguous artists (`ambiguous_artist == TRUE`) into one row per artist name.
+Let's investigate and quantify the problem. First these are top 10 repeated artist names in the dataset (exact name match, case insensitive):
 
-```{r collapseartists, echo=TRUE}
+```{r duplicates, echo=FALSE}
+name_duplicates <- lfm[,
+  .(unique_artists = .N),
+  by = .(name = tolower(artist_mb))
+][
+  order(unique_artists, decreasing = TRUE),
+]
+name_duplicates[, name := factor(name, levels = rev(name))]
+
+duplicate_bar <- ggplot(
+  name_duplicates[1:10, ],
+  aes(name, unique_artists)
+) +
+  geom_col(
+    fill = '#ED7953FF'
+  ) +
+  coord_flip() +
+  labs(
+    title = "duplicate artist names",
+    x = "Artist name (case insensitive)",
+    y = "Unique artists"
+  ) +
+  theme_bw()
+
+duplicate_bar
+
+```
+
+In general, `r paste(round(100 * name_duplicates[unique_artists > 1, sum(unique_artists)] / name_duplicates[, sum(unique_artists)], 2), "%")` of all artists recorded in the dataset have name that is not unique. That's a non-negligible proportion. On the one hand, this can be expected -- people have similar ideas and they will come up with exactly the same names independently. On the other, it's kind of surprising that some artists do not appear to seek originality and pick names that are unique. Why would anyone pick a name that is already taken by at least 80 other artists in the world (many of them still active and present online)? For current purposes, I collapse ambiguous artists (`ambiguous_artist == TRUE`) into one row per artist name.
+
+```{r collapseartists, echo=FALSE}
 lfm[, mbid := NULL]
 fix <- lfm[ambiguous_artist == TRUE, ]
 lfm <- lfm[ambiguous_artist == FALSE, ]
@@ -68,9 +95,9 @@ lfm <- rbindlist(list(lfm, fix), fill = TRUE)
 rm(fix)
 ```
 
-Next I identify single country an artist comes from. The dataset contains conflicting information about artists' origin. Sometimes there is a legitimate ambiguity in what should be chosen, in other cases there is an incorrect information due to factual errors or artist duplicites. In either case, these need to be unified. Examples of problematic data:
+Next I identify single country an artist comes from. The dataset contains conflicting information about artists' origin. Sometimes there is a legitimate ambiguity in what should be chosen, in other cases there is an incorrect information due to factual errors or artist duplicates. In either case, these need to be unified. Examples of problematic data:
 
-```{r countryexample, echo=TRUE}
+```{r countryexample, echo=FALSE}
 lfm[
   artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira'),
   .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
@@ -86,7 +113,7 @@ The approach is the following:
 
 Note, as there is no way to automatically verify whether multiple countries in last.fm tags relate to one artist or multiple artists sharing one profile, in the fourth step we might end up with an overestimate of artist popularity (only one end up being chosen, but their scobble count come from a shared profile).
 
-```{r countryfix, echo=TRUE}
+```{r countryfix, echo=FALSE}
 # unify countries
 lfm[, country := NA_character_]
 lfm[
@@ -123,17 +150,20 @@ lfm[
   country := sapply(tags_lastfm, first_match, USE.NAMES = FALSE)
 ]
 
-print('Example fo resolving conflicts:')
+```
+
+Conflict resolution example:
+
+```{r conflictedcountriesexample, echo=FALSE}
 lfm[
   artist_lastfm %in% c('Arkona', 'Garbage', 'Ikon'),
   .(artist_lastfm, country_mb, country_lastfm, country)
 ]
-
 ```
 
 In the next step I assign genre to each artist. This step requires investigating all tags and identifying unique genres in them. This requires some aggregation over different spelling, qualifiers, etc. First I read all tags to a separate data.table.
 
-```{r tagexploration, echo=TRUE}
+```{r tagexploration, echo=FALSE}
 tags_lfm <- as.data.table(table(tolower(
   lfm[
     !is.na(tags_lastfm),
@@ -148,10 +178,9 @@ print(paste0('Tags used only once: ', round(100 * (tags_lfm[N == 1, .N] / tags_l
 print(paste0('Used at least 10 times: ', tags_lfm[N >= 10, .N], ' (', round(100 * (tags_lfm[N >= 10, .N] / tags_lfm[, .N]), 2), '%)'))
 ```
 
-A quick glance at tags reveals that a lot of information is not related to the genre of music (e.g., *(fe)male vocalists*, *seen live*, *under 2000 listeners*, etc.) and that (unsurprisibgly) people do not know how to use tags. Specifically, there are a lot of 'compound' tags -- for instance, instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags such as *true oldschool norwegian black metal* (trve, tru, troo, tr00 are also observed). As a consequence, there are multiple tags referring (roughly) to the same genre.
+A quick glance at tags reveals that a lot of information is not related to the genre of music (e.g., *(fe)male vocalists*, *seen live*, *under 2000 listeners*, etc.) and that (unsurprisingly) people do not know how to use tags. Specifically, there are a lot of 'compound' tags -- for instance, instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags such as *true oldschool norwegian black metal*. As a consequence, there are multiple tags referring (roughly) to the same genre. For instance there are `r tags_lfm[grepl('black.*metal', V1), .N]` unique *black metal* tags. Top ten:
 
-```{r blackmetalexample, echo=TRUE}
-print(paste("Unique \'black metal\' tags:", tags_lfm[grepl('black.*metal', V1), .N]))
+```{r blackmetalexample, echo=FALSE}
 head(tags_lfm[grepl('black.*metal', V1), ], 10)
 ```
 
@@ -159,10 +188,10 @@ The approach to establishing a single genre is the following:
 
 - for each artist, get a rank of last.fm tags,
 - pick the most popular tag,
-- if the picked tag is not related to genre (see above), iteratively replace by next tag in the rank,
+- if the picked tag is not related to genre, iteratively replace by next tag in the rank,
 - if establishing genre form last.fm tags failed, repeat the process on musicbrainz tag data.
 
-```{r genreaggregation1, echo=TRUE}
+```{r genreaggregation1, echo=FALSE}
 # some of more common 'bad' tags found thorough manual inspection
 filter_pattern <- paste(
   patterns[, paste(pattern, collapse = '|')],
@@ -219,7 +248,7 @@ This approach yields `r lfm[, uniqueN(genre)]` unique genres, which are now aggr
 - Some of these regex patterns are not perfect, but I checked manually what they match on this particular dataset so there should be no major errors,
 - I wanted to keep the number of unique genres minimal so there are some necessary arbitrary simplifications in this step (e.g., *brutal apocalyptic black gothic doom metal* becomes *black metal*).
 
-```{r genreaggregation1, echo=TRUE}
+```{r genreaggregation2, echo=FALSE}
 lfm[
   grepl("hip.*hop|( |;|^)rap( |;|$)", genre) &
     !grepl("rapcore", genre),
@@ -308,7 +337,7 @@ lfm[
 
 As all would expect, the vast majority of artists have a very small number of listeners and scrobbles while there are few ones with extraordinary popularity. While this fact is a common knowledge, here we can get a tangible estimate of how this popularity is distributed.
 
-```{r popularitycdf, echo=TRUE}
+```{r popularitycdf, echo=FALSE}
 lfm[is.na(listeners_lastfm), listeners_lastfm := 0]
 lfm[is.na(scrobbles_lastfm), scrobbles_lastfm := 0]
 get_percentile <- lfm[, ecdf(listeners_lastfm)]
@@ -353,43 +382,20 @@ print(ecdf_plot)
 Note that in Empirical CDF plot, x axis is pruned at 50,000 listeners -- this is approximately `r paste(round(100 * 50000 / lfm[1L, listeners_lastfm], 2), "%")` of how many listeners the top artist in dataset (i.e., Coldplay) has. Use the widget below to see how the world's scrobbles are concentrated.
 
 ```{r percentilewidget, echo = TRUE}
-#TODO verify if this is correct
+# todo rewrite this to static
 
-numericInput(
-  inputId = "topartist_perc",
-  label = "Pick top % of artists",
-  width = "150px",
-  min = 0, max = 100, step = 0.1, value = 1
-)
-
-renderUI({
-  if(is.na(input$topartist_perc) | input$topartist_perc < 0 | input$topartist_perc > 100){
-    HTML("<p><i>Choose value between 0 and 100.</i></p>")
-  }else{
-    # compute value
-    top_x_scrobbles <- lfm[percentile >= (1 - input$topartist_perc / 100), sum(scrobbles_lastfm)]
-    all_scrobbles <- lfm[, sum(scrobbles_lastfm)]
-    scrobbles_perc <- round(
-      100 * top_x_scrobbles / all_scrobbles,
-      2
-    )
-    # generate message
-    HTML(
-      sprintf(
-        "<p>Top <b>%s</b>%% (i.e, %s out of %s) of artists generate <b>%s</b>%% of all scrobbles</p>",
-        input$topartist_perc,
-        display_values(lfm[percentile > (1 - input$topartist_perc / 100), .N]),
-        display_values(lfm[, .N]),
-        scrobbles_perc
-      )
-    )
-  }
-})
+# top_x_scrobbles <- lfm[percentile >= (1 - input$topartist_perc / 100), sum(scrobbles_lastfm)]
+# all_scrobbles <- lfm[, sum(scrobbles_lastfm)]
+# scrobbles_perc <- round(
+#   100 * top_x_scrobbles / all_scrobbles,
+#   2
+# )
+# lfm[percentile > (1 - input$topartist_perc / 100), .N]
 ```
 
 Another way to look at this is to see a scatterplot of listeners vs scrobbles for all artists in the world.
 
-```{r hexbinscatter, echo = TRUE}
+```{r hexbinscatter, echo=FALSE}
 artist_label <- lfm[
   order(scrobbles_lastfm, decreasing = TRUE), 
 ][
@@ -455,7 +461,20 @@ print(hexbin_scatter)
 
 ## Geography of music production
 
-
+```{r leaflettest, echo=FALSE}
+opts <- leafletOptions(minZoom = 2, maxZoom = 5, worldCopyJump = TRUE)
+world_map <- leaflet(options = opts) %>%
+  setView(lat = 50, lng = 15, zoom = 4) %>%
+  addMapPane("background_map", zIndex = 410) %>%
+  addMapPane("polygons", zIndex = 420) %>%
+  addMapPane("labels", zIndex = 430) %>%
+  addProviderTiles(
+    "Esri.WorldTerrain", #"Stamen.TonerBackground"
+    providerTileOptions(zIndex=410)
+  )
+  
+world_map
+```
 
 ## Conclusion
 
