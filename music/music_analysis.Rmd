@@ -491,7 +491,7 @@ artist_label <- lfm[
   order(scrobbles_lastfm, decreasing = TRUE), 
 ][
   1:8,
-  .(artist_lastfm, x = listeners_lastfm, y = scrobbles_lastfm)
+  .(artist, x = listeners_lastfm, y = scrobbles_lastfm)
 ]
 
 hexbin_scatter <- ggplot(
@@ -524,7 +524,7 @@ hexbin_scatter <- ggplot(
     "text",
     x = artist_label$x,
     y = artist_label$y,
-    label = artist_label$artist_lastfm,
+    label = artist_label$artist,
     size = 3.5
   ) +
   annotate(
@@ -552,7 +552,7 @@ print(hexbin_scatter)
 
 ```{r scrobblescumsum, echo = FALSE}
 scrobbles <- lfm[,
-  .(artist_lastfm, scrobbles_lastfm)
+  .(artist, scrobbles_lastfm)
 ][
   order(scrobbles_lastfm, decreasing = TRUE), 
 ]
