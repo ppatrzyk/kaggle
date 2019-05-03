@@ -125,7 +125,7 @@ Next I identify single country an artist comes from. The dataset contains confli
 
 ```{r countryexample, echo=FALSE}
 lfm[
-  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira'),
+  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Gotan Project'),
   .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
 ]
 ```
@@ -572,7 +572,7 @@ All world scrobbles (i.e., track plays) are concentrated on very limited set of 
 
 Visualizing this:
 
-```{r propviz, echo = TRUE}
+```{r propviz, echo=FALSE}
 rectangles <- data.table(
   x = 0,
   y = rep(c(1, 2), 2),
@@ -596,7 +596,7 @@ prop_rectangles
 
 Summarizing data by country and genre poses the problem of handling missing values. In the dataset, any of these two variables can be missing -- hence, prior to proceeding we need to check if the presence of missing values is random. Because data is sensitive to outliers (very succesful bands), here I observe aggregated number of scrobbles in missing entires rather than their raw count. First, looking at a country-level, here is a summary of proportion of music with missing genre. In other words, if we a take a single country, for what proportion of music we cannot tell what genre is it.
 
-```{r missinggenrecheck, echo=TRUE}
+```{r missinggenrecheck, echo=FALSE}
 country_test <- dcast.data.table(
   lfm[,
     sum(as.numeric(scrobbles_lastfm)), 
@@ -615,7 +615,7 @@ country_test[, summary(prop_missing)]
 
 Second, a summary of proprotion of missing countries on a genre level. In other words, if we a take a single genre, for what proportion of music we cannot tell the country of origin.
 
-```{r missingcountrycheck, echo=TRUE}
+```{r missingcountrycheck, echo=FALSE}
 genre_test <- dcast.data.table(
   lfm[,
     sum(as.numeric(scrobbles_lastfm)), 
@@ -685,11 +685,6 @@ genre_country <- merge(
 )
 genre_country[, genre_perc := round(100 * allscrobbles / genretotal, 2)]
 genre_country[, country_perc := round(100 * allscrobbles / countrytotal, 2)]
-
-# genre_country_top <- genre_country[
-#   (genre %in% genres[allscrobbles > 10^7 & artists > 80, genre]) &
-#     (country %in% country_all[1:25, country]),
-# ]
 ```
 
 ## Top Genres
@@ -907,12 +902,29 @@ Another interesting question is to observe relative popularity of specific genre
 Top 10 genres for top 24 music producers:
 TODO withincountry popularity: (% of country-level production)
 
-```{r, relativeproduction}
-# todo facets
-# [country == 'Poland', ][1:10, ]
-test <- ggplot(
-  genre_country[order(country_perc, decreasing = TRUE)],
-  aes(genre, country_perc)
+```{r, relativeproduction, echo=TRUE}
+# todo genre favtor order different for each facet
+
+top_countries <- country_all[1:24, country]
+genres_within_data <- replicate(24, data.table())
+for (i in 1:length(top_countries)) {
+  current_country <- top_countries[i]
+  current_subset <- genre_country[
+    order(country_perc, decreasing = TRUE),
+  ][
+    country == current_country, 
+  ]
+  topgenres <- rbindlist(list(
+    current_subset[1:10, .(country = current_country, genre, country_perc)],
+    current_subset[11:.N, .(country = current_country, 'other', country_perc = sum(country_perc))]
+  ))
+  genres_within_data[[i]] <- topgenres
+}
+genres_within_data <- rbindlist(genres_within_data)
+
+genres_within_bar <- ggplot(
+  genres_within_data,
+  aes(factor(genre, levels = unique(genre)), country_perc)
 ) +
   geom_col(
     fill = '#ED7953FF'
@@ -924,9 +936,14 @@ test <- ggplot(
     y = "Percent of produced music"
   ) +
   theme_bw() +
-  facet_wrap(vars(country))
+  facet_wrap(
+    vars(country), 
+    scales = "free",
+    nrow = 6,
+    ncol = 4
+  )
 
-test
+genres_within_bar
 ```
 
 ## Conclusion
