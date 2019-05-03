@@ -35,6 +35,7 @@ lfm[country_mb == "Soviet Union", country_mb := 'Russia']
 lfm[country_mb == "East Germany", country_mb := 'Germany']
 lfm[country_mb == "Czechoslovakia", country_mb := 'Czech Republic']
 lfm[country_mb %in% c('Yugoslavia', 'Serbia and Montenegro'), country_mb := 'Serbia']
+lfm[country_mb == 'Europe', country_mb := NA_character_]
 ```
 
 ```{r helperfunctions, echo=FALSE}
@@ -185,7 +186,7 @@ lfm[
   country := unname(countries[, 1])
 ]
 rm(tags, countries)
-
+lfm[country == '', country := NA_character_]
 ```
 
 Conflict resolution example:
@@ -215,9 +216,11 @@ wordcloud(
   words = tags_lfm$V1, 
   freq = tags_lfm$N, 
   min.freq = 2000, 
-  scale = c(3, 0.5), 
+  scale = c(3, 0.5),
+  random.order = FALSE,
   colors = viridis_pal(alpha = 1, begin = 0, end = 1, direction = 1, option = "plasma")(10)
 )
+# TODO fix could not be fitted
 ```
 
 A quick glance at tags reveals that:
@@ -243,13 +246,14 @@ The approach to establishing a single genre is the following:
 filter_pattern <- paste(
   patterns[, paste(pattern, collapse = '|')],
   '^all$', "^\\d+\'*[s]?$", "live", "male", "europe", "listen", "eurovision", "^world$", "balkan", "participant", "gorgeous", "factor", "shqip", "^brasil$", "lyricist", "actress", "welsh", 'need to rate',
-  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century", '^african*$', 'asian*$', '^cute$', "photographer", "pianist", "francophone", 'français',
-  "recording", "creative", "espa", "francai", "deutsch", "portugu", "eesti", "azeri", "svenskt", "^love$", "cover", "unknown", "remix", "musician", "to.*clean.*up", "akb48", "volalist", "doujin",
+  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century", '^african*$', 'asian*$', '^cute$', "photographer", "pianist", "francophone", 'français', 'split.*me',
+  "recording", "creative", "espa", "francai", "deutsch", "portugu", "eesti", "azeri", "svenskt", "^love$", "cover", "unknown", "remix", "musician", "to.*clean.*up", "akb48", "volalist", "doujin", 'should.*be.*split',
   "funny", "humo", "super", "porn", "boobs", "science", "^muz[iy]ka$", "podcast", "test", "shit", "festival", "album", "^crap$", "^conductor$", "^guitar$", "arab", "london", "disney", "minnesota", "bogus", "guitar",
   "iskelma", "comedy", "composer", "dansk", "siberia", "norsk", "polsk", "^sex[y]*$", "epic", "parody",
-  "caucasia", "albani", "suomi", "duet", "prank", "spotify", "am.*ricain", "game.*music",
+  "caucasia", "albani", "suomi", "duet", "prank", "spotify", "am.*ricain", "game.*music", 'do.*not.*split',
   "^music$", "5432fun", "schlager", "oldies", "^idol$", "liedermacher", "^everything$", "^nordic$", "^amazing$", "mistagged", "^lovely$", "check", "<3", "^latin$", 'video.*game', "detroit", "mandarin", "^ost$",
   "likedis.*auto", "production.*music", "^english$", "^session$", "^england$", "kabaret", "youtube",
+  'google', 'neder', '^cool$', 'novelty', 'rspiel', 'label owner', 'taiwan', 'stand.?up', 'producer', 'engineer', 'designer', '^actor$','^poet$', '^vocalist$',
   sep = '|'
 )
 rm(patterns)
@@ -295,12 +299,15 @@ lfm[
   genre := 'hip-hop'
 ]
 
-lfm[grepl("r *n *b( |$)|r&b|rhyth?m.*&.*blues|rhyth?m and blues", genre), genre := 'rnb']
+lfm[grepl("r *n *b( |$)|r.?(&|and).?b|rhyth?m.*&.*blues|rhyth?m and blues", genre), genre := 'rnb']
 lfm[grepl("jazz", genre), genre := 'jazz']
+lfm[grepl("trip.?hop", genre), genre := 'trip-hop']
 lfm[grepl("reggae", genre), genre := 'reggae']
 lfm[grepl("volksmusik|world.*music", genre), genre := 'world music']
 lfm[grepl('worship|religi', genre), genre := 'worship']
 lfm[grepl('soul', genre), genre := 'soul']
+lfm[grepl('a.?cap', genre), genre := 'a cappella']
+lfm[grepl('8.?bit', genre), genre := '8-bit']
 
 lfm[grepl('drum.*bass', genre), genre := 'drum and bass']
 lfm[grepl('dance', genre), genre := 'dance']
@@ -338,6 +345,8 @@ lfm[grepl('goth', genre) & !grepl('metal', genre), genre := 'gothic rock']
 lfm[grepl('rock.*rol', genre), genre := 'rock and roll']
 lfm[grepl('hard.*rock', genre), genre := 'hard rock']
 lfm[grepl('post.*rock', genre), genre := 'post-rock']
+lfm[grepl('j.?rock', genre), genre := 'rock']
+lfm[grepl('rock.*argentino', genre), genre := 'rock']
 
 rock_lookup <- lfm[
   grepl("rock", genre), 
@@ -354,6 +363,7 @@ lfm[grepl('post.*punk', genre), genre := 'post-punk']
 lfm[grepl('cold.*wave|zimna.*fala', genre), genre := 'coldwave']
 lfm[grepl('dark.*wave', genre), genre := 'darkwave']
 lfm[grepl('poetr|poezj', genre), genre := 'sung poetry']
+lfm[grepl('folklore', genre), genre := 'folk']
 
 punk_lookup <- lfm[
   grepl("punk", genre), 
@@ -380,6 +390,7 @@ lfm[
   genre := NA_character_
 ]
 rm(all_lookup)
+lfm[genre == '', genre := NA_character_]
 ```
 
 ```{r nameunification, echo=FALSE}
@@ -547,7 +558,7 @@ scrobbles <- lfm[,
 ][
   order(scrobbles_lastfm, decreasing = TRUE), 
 ]
-scrobbles[, total := sum(scrobbles_lastfm)]
+scrobbles[, total := sum(as.numeric(scrobbles_lastfm))]
 scrobbles[, cumulative := cumsum(as.numeric(scrobbles_lastfm))]
 scrobbles[, proportion := cumulative / total]
 scrobbles[, distance_half := abs(proportion - 0.5)]
@@ -581,67 +592,138 @@ prop_rectangles <- ggplot(rectangles, aes(xmin = x, xmax = width, ymin = y, ymax
 prop_rectangles
 ```
 
-## Top Genres
+## Summarizing data
 
-```{r topgenres, echo=FALSE, warning=FALSE}
+Summarizing data by country and genre poses the problem of handling missing values. In the dataset, any of these two variables can be missing -- hence, prior to proceeding we need to check if the presence of missing values is random. Because data is sensitive to outliers (very succesful bands), here I observe aggregated number of scrobbles in missing entires rather than their raw count. First, looking at a country-level, here is a summary of proportion of music with missing genre. In other words, if we a take a single country, for what proportion of music we cannot tell what genre is it.
+
+```{r missinggenrecheck, echo=TRUE}
+country_test <- dcast.data.table(
+  lfm[,
+    sum(as.numeric(scrobbles_lastfm)), 
+    by = .(
+      country,
+      missing_genre = ifelse(is.na(genre), 'missing', 'present')
+    )
+  ],
+  country ~ missing_genre,
+  value.var = 'V1'
+)
+country_test[is.na(country_test)] <- 0
+country_test[, prop_missing := round(missing / (missing + present), 2)]
+country_test[, summary(prop_missing)]
+```
+
+Second, a summary of proprotion of missing countries on a genre level. In other words, if we a take a single genre, for what proportion of music we cannot tell the country of origin.
+
+```{r missingcountrycheck, echo=TRUE}
+genre_test <- dcast.data.table(
+  lfm[,
+    sum(as.numeric(scrobbles_lastfm)), 
+    by = .(
+      genre,
+      missing_country = ifelse(is.na(country), 'missing', 'present')
+    )
+  ],
+  genre ~ missing_country,
+  value.var = 'V1'
+)
+genre_test[is.na(genre_test)] <- 0
+genre_test[, prop_missing := round(missing / (missing + present), 2)]
+genre_test[, summary(prop_missing)]
+```
+
+Inspection reveals that it is not possible to reliably analyze genre vs. country associations for less popular genres or smaller countries, as non-negligible proportion of data is missing. However, for bigger categories, there is only about ~5% of data in other category missing and this number is stable across diffrent categories (countires or genres). In subsequent analysis I take subset of data where both country and genre information is present.
+
+```{r summarysubsets, echo=FALSE}
 genres <- lfm[
-  !is.na(genre),
+  !(is.na(genre) | is.na(country)),
   .(
     artists = .N,
     topartist = artist[1],
     topartist_country = country[1],
-    allscrobbles = sum(scrobbles_lastfm),
-    max_listeners = listeners_lastfm[1],
-    median_listeners = median(listeners_lastfm),
-    median_scrobbles = median(scrobbles_lastfm)
+    allscrobbles = sum(as.numeric(scrobbles_lastfm))
   ),
   by = genre
+][
+  order(allscrobbles, decreasing = TRUE)
 ]
 
-# genres_top <- melt.data.table(
-#   genres[
-#     allscrobbles >= 500 * 10^6,
-#     .(genre, artists, allscrobbles)
-#   ][
-#     order(genre),
-#   ],
-#   measure.vars = c('artists', 'allscrobbles')
-# )
-# 
-# genres_bar <- ggplot(genres_top, aes(genre, value, fill = variable)) +
-#   geom_bar(stat = "identity", position = "dodge") +
-#   coord_flip() +
-#   facet_wrap(~variable, ncol = 2, scales = "free_y")
+country_all <- lfm[
+  !(is.na(genre) | is.na(country)),
+  .(
+    artists = .N,
+    topartist = artist[1],
+    topartist_genre = genre[1],
+    allscrobbles = sum(as.numeric(scrobbles_lastfm))
+  ),
+  by = country
+][
+  order(allscrobbles, decreasing = TRUE)
+]
+country_all[, percent_of_all_scrobbles := round(100 * allscrobbles /  sum(as.numeric(allscrobbles)), 2)]
 
+genre_country <- lfm[
+  !(is.na(genre) | is.na(country)),
+  .(
+    # artists = .N,
+    allscrobbles = sum(as.numeric(scrobbles_lastfm))
+  ),
+  by = .(genre, country)
+]
+
+genre_country <- merge(
+  genre_country, 
+  genres[, .(genre, genretotal = allscrobbles)],
+  all.x = TRUE,
+  by = 'genre'
+)
+genre_country <- merge(
+  genre_country, 
+  country_all[, .(country, countrytotal = allscrobbles)],
+  all.x = TRUE,
+  by = 'country'
+)
+genre_country[, genre_perc := round(100 * allscrobbles / genretotal, 2)]
+genre_country[, country_perc := round(100 * allscrobbles / countrytotal, 2)]
+
+# genre_country_top <- genre_country[
+#   (genre %in% genres[allscrobbles > 10^7 & artists > 80, genre]) &
+#     (country %in% country_all[1:25, country]),
+# ]
+```
+
+## Top Genres
+
+```{r topgenres, echo=FALSE, warning=FALSE}
 genres_top <- genres[
   allscrobbles >= 500 * 10^6,
   .(genre, artists, allscrobbles)
-][
-  order(genre),
 ]
 
 genres_scatter <- ggplot(genres_top, aes(artists, allscrobbles)) +
-  geom_point(fill = 'orange', color = 'black', stroke = 1, size = 4, alpha = 0.4) +
+  geom_point(shape = 21, fill = '#ED7953FF', color = 'black', stroke = 1, size = 4, alpha = 0.4) +
   scale_x_continuous(labels = display_values) + 
-  scale_y_continuous(labels = display_values) +
+  scale_y_log10(labels = display_values) +
   labs(
     title = "Artists and total scrobbles by genre",
     x = "Number of artists",
-    y = "Aggregated scrobbles"
+    y = "Aggregated scrobbles (Log scale)"
   ) + 
   annotate(
     'text',
-    x = genres_top$artists,
-    y = genres_top$allscrobbles,
-    label = genres_top$genre,
+    # x = genres_top$artists,
+    # y = genres_top$allscrobbles,
+    x = genres_top[allscrobbles > (1.3 * 10^9) | artists > 5000, artists],
+    y = genres_top[allscrobbles > (1.3 * 10^9) | artists > 5000, allscrobbles],
+    label = genres_top[allscrobbles > (1.3 * 10^9) | artists > 5000, genre],
     size = 3.5
-  )
+  ) +
+  theme_bw()
 
-#TODO log scale
-#heatmap country v genre
-# withincountry popularity: maps for chosen genres (% of country-level production)
-
+genres_scatter
 ```
+
+jazz vs classic rock comparison, summarize.
 
 ## Geography of music production
 
@@ -684,27 +766,13 @@ centers[which(world@data$country == "United Kingdom"), "y"] <- 52.00022
 First, let's examine the ranking of all counties by the total number of scrobbles their artists produce. Countries on map are colored by the total number of scrobbles on a log scale and labeled by the top artists coming from there.
 
 ```{r topbycountry, echo=FALSE}
-world_scrobbles <- lfm[, sum(scrobbles_lastfm)]
-country_all <- lfm[,
-  .(
-    artists = .N,
-    topartist = artist[1],
-    topartist_genre = genre[1],
-    allscrobbles = sum(scrobbles_lastfm),
-    max_listeners = listeners_lastfm[1],
-    median_listeners = median(listeners_lastfm),
-    median_scrobbles = median(scrobbles_lastfm)
-  ),
-  by = country
-]
-country_all[, percent_of_all_scrobbles := round(100 * allscrobbles / world_scrobbles, 2)]
-rm(world_scrobbles)
-country_all <- country_all[
-  !is.na(country) & country != '' & allscrobbles > 10^5,
-][
-  order(allscrobbles, decreasing = TRUE),
-]
-datatable(country_all)
+datatable(
+  country_all[
+    !is.na(country) & country != '' & allscrobbles > 10^5,
+  ][
+    order(allscrobbles, decreasing = TRUE),
+  ]
+)
 
 country_all[, logscrobbles := log10(allscrobbles + 1)]
 
@@ -755,6 +823,29 @@ totalscrobbles_map <- addPolygons(
 
 totalscrobbles_map
 # TODO: fix legend (log conversion)
+
+country_bar_data <- rbindlist(list(
+  country_all[1:10, .(country, percent_of_all_scrobbles)],
+  country_all[11:.N, .('other', percent_of_all_scrobbles = sum(percent_of_all_scrobbles))]
+))
+country_bar_data[, country := factor(country, levels = rev(country))]
+
+country_bar <- ggplot(
+  country_bar_data,
+  aes(country, percent_of_all_scrobbles)
+) +
+  geom_col(
+    fill = '#ED7953FF'
+  ) +
+  coord_flip() +
+  labs(
+    title = "Where do most listened to music come from?",
+    x = "Music origin",
+    y = "Percent of world's listened to music"
+  ) +
+  theme_bw()
+
+country_bar
 ```
 
 When looking at raw data, almost half (`r country_all[country == 'United States', percent_of_all_scrobbles]`%) of the songs listened to are made by artists coming from the United States. The next country, United Kingdom, generates `r country_all[country == 'United Kingdom', percent_of_all_scrobbles]`% of all scrobbles. This skew is even more apparent when looking at the origin of the top 1000 artists in the world:
@@ -767,6 +858,8 @@ datatable(
       by = country
     ][
       order(artists_in_top1k, decreasing = TRUE), 
+    ][
+      !is.na(country),
     ]
 )
 ```
@@ -775,46 +868,66 @@ Only `r lfm[1:1000, ][!(country %in% c('United States', 'United Kingdom')), .N]`
 
 Having confirmed and quantified what is widely knows about the mainstream music, let's investigate whether this dominance is present for all genres.
 
-For which genres top artist is not from USA or UK? Among most common 100 genres:
+For which genres the top producer (by aggregate number of scrobbles) or the top artist is not from USA or UK? 
 
 ```{r topnotus, echo=FALSE}
+byscrobbles <- genre_country[
+  order(genre_perc, decreasing = TRUE),
+  .(
+    top_producer = country[1],
+    perc_all = genre_perc[1],
+    genretotal = genretotal[1]
+  ),
+  by = genre
+][,
+  .(genre, top_producer, perc_all, genretotal)
+]
+
 datatable(
-  genres[
-    order(artists, decreasing = TRUE), 
+  merge(
+    genres[, .(genre, topartist, topartist_country)],
+    byscrobbles,
+    by = 'genre'
+  )[
+    !(topartist_country %in% c('United States', 'United Kingdom')) |
+      !(top_producer %in% c('United States', 'United Kingdom')),
   ][
-    1:100, 
+    genretotal > 10^7
   ][
-    !(topartist_country %in% c('United States', 'United Kingdom')),
-    .(genre, topartist_country, topartist)
+    order(genretotal, decreasing = TRUE),
+    .(genre, top_producer, topartist_country, topartist)
   ]
 )
 ```
 
-Second, let't investigate the origin of scrobbles on a genre level. Here I isolate top genres and present proportions of all scrobbles coming from bands coming from different countries.
+## Genre in country-level production
 
-```{r genreheatmap, echo = TRUE}
-# TODO/
+Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries
+
+Top 10 genres for top 24 music producers:
+TODO withincountry popularity: (% of country-level production)
+
+```{r, relativeproduction}
+# todo facets
+# [country == 'Poland', ][1:10, ]
+test <- ggplot(
+  genre_country[order(country_perc, decreasing = TRUE)],
+  aes(genre, country_perc)
+) +
+  geom_col(
+    fill = '#ED7953FF'
+  ) +
+  coord_flip() +
+  labs(
+    title = "Within country popularity",
+    x = "Genre",
+    y = "Percent of produced music"
+  ) +
+  theme_bw() +
+  facet_wrap(vars(country))
+
+test
 ```
-
-
-Metal
-
-```{r Metal, echo=FALSE}
-top20_countries <- lfm[grepl('metal', genre), .N, by = country][order(-N)][1:20, ]
-metal <- lfm[
-  grepl('metal', genre), 
-  .(
-    allscrobbles = sum(scrobbles_lastfm),
-    topartist = artist[1]
-  ),
-  by = .(genre, country)
-]
-```
-
-
-maps for top genres
-
-relative popularity within a country
 
 ## Conclusion
 
