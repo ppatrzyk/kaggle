@@ -3,7 +3,7 @@ title: "Music Production Across the World"
 author: "Piotr Patrzyk"
 output: 
   html_document:
-    keep_md: true
+    keep_md: false
 ---
 
 ## Introduction
@@ -63,7 +63,7 @@ Due to the fact that last.fm does dot disambiguate between different artists tha
 ```{r duplicateexample, echo=FALSE}
 lfm[
   artist_lastfm == 'First Aid Kit', 
-  .(artist_mb, artist_lastfm, country_mb, country_lastfm, listeners_lastfm, scrobbles_lastfm)
+  .(artist_lastfm, country_mb, country_lastfm, listeners_lastfm)
 ]
 ```
 
@@ -125,7 +125,7 @@ Next I identify single country an artist comes from. The dataset contains confli
 
 ```{r countryexample, echo=FALSE}
 lfm[
-  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Gotan Project'),
+  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Gotan Project', 'Garbage', 'Arkona'),
   .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
 ]
 ```
@@ -189,15 +189,6 @@ rm(tags, countries)
 lfm[country == '', country := NA_character_]
 ```
 
-Conflict resolution example:
-
-```{r conflictedcountriesexample, echo=FALSE}
-lfm[
-  artist_lastfm %in% c('Arkona', 'Garbage', 'Ikon'),
-  .(artist_lastfm, country_mb, country_lastfm, country)
-]
-```
-
 In the next step I assign genre to each artist. This step requires investigating all tags and identifying unique genres in them. This requires some aggregation over different spelling, qualifiers, etc. First I read all tags to a separate data.table.
 
 ```{r tagexploration, echo=FALSE}
@@ -209,9 +200,9 @@ tags_lfm <- as.data.table(table(tolower(
 )))[order(N, decreasing = TRUE), ]
 ```
 
-There are `r tags_lfm[, .N])` unique tags in the dataset. `r round(100 * (tags_lfm[N == 1, .N] / tags_lfm[, .N]), 2)`% of them are used only once and only `r tags_lfm[N >= 10, .N], ' (', round(100 * (tags_lfm[N >= 10, .N] / tags_lfm[, .N]), 2)`% of them are used at least 10 times. Worcloud of the most common tags is depicted below:
+There are `r tags_lfm[, .N]` unique tags in the dataset. `r round(100 * (tags_lfm[N == 1, .N] / tags_lfm[, .N]), 2)`% of them are used only once and only `r round(100 * (tags_lfm[N >= 10, .N] / tags_lfm[, .N]), 2)`% of them are used at least 10 times. Worcloud of the most common tags is depicted below:
 
-```{r wordcloud, echo=TRUE}
+```{r wordcloud, echo=FALSE, warning=FALSE}
 wordcloud(
   words = tags_lfm$V1, 
   freq = tags_lfm$N, 
@@ -220,7 +211,6 @@ wordcloud(
   random.order = FALSE,
   colors = viridis_pal(alpha = 1, begin = 0, end = 1, direction = 1, option = "plasma")(10)
 )
-# TODO fix could not be fitted
 ```
 
 A quick glance at tags reveals that:
@@ -246,7 +236,7 @@ The approach to establishing a single genre is the following:
 filter_pattern <- paste(
   patterns[, paste(pattern, collapse = '|')],
   '^all$', "^\\d+\'*[s]?$", "live", "male", "europe", "listen", "eurovision", "^world$", "balkan", "participant", "gorgeous", "factor", "shqip", "^brasil$", "lyricist", "actress", "welsh", 'need to rate',
-  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century", '^african*$', 'asian*$', '^cute$', "photographer", "pianist", "francophone", 'français', 'split.*me',
+  "singer", "songwriter", "soundtrack", "beautiful", "awesome", "scandinav", "streamable", "duo", "radio", "century", '^african*$', 'asian*$', '^cute$', "photographer", "pianist", "francophone", 'franÃ§ais', 'split.*me',
   "recording", "creative", "espa", "francai", "deutsch", "portugu", "eesti", "azeri", "svenskt", "^love$", "cover", "unknown", "remix", "musician", "to.*clean.*up", "akb48", "volalist", "doujin", 'should.*be.*split',
   "funny", "humo", "super", "porn", "boobs", "science", "^muz[iy]ka$", "podcast", "test", "shit", "festival", "album", "^crap$", "^conductor$", "^guitar$", "arab", "london", "disney", "minnesota", "bogus", "guitar",
   "iskelma", "comedy", "composer", "dansk", "siberia", "norsk", "polsk", "^sex[y]*$", "epic", "parody",
@@ -706,8 +696,6 @@ genres_scatter <- ggplot(genres_top, aes(artists, allscrobbles)) +
   ) + 
   annotate(
     'text',
-    # x = genres_top$artists,
-    # y = genres_top$allscrobbles,
     x = genres_top[allscrobbles > (1.3 * 10^9) | artists > 5000, artists],
     y = genres_top[allscrobbles > (1.3 * 10^9) | artists > 5000, allscrobbles],
     label = genres_top[allscrobbles > (1.3 * 10^9) | artists > 5000, genre],
@@ -784,7 +772,7 @@ topartist_data@data <- topartist_data@data[order(topartist_data@data$index), ]
 
 color_pal <- colorNumeric(
   palette = "plasma",
-  reverse = TRUE,
+  reverse = FALSE,
   domain = topartist_data@data$logscrobbles, 
   na.color = "transparent"
 )
@@ -845,7 +833,7 @@ country_bar
 
 When looking at raw data, almost half (`r country_all[country == 'United States', percent_of_all_scrobbles]`%) of the songs listened to are made by artists coming from the United States. The next country, United Kingdom, generates `r country_all[country == 'United Kingdom', percent_of_all_scrobbles]`% of all scrobbles. This skew is even more apparent when looking at the origin of the top 1000 artists in the world:
 
-```{r top100, echo=TRUE}
+```{r top100, echo=FALSE}
 datatable(
   lfm[
       1:1000, 
@@ -895,6 +883,8 @@ datatable(
 )
 ```
 
+TODO additional maps here
+
 ## Genre in country-level production
 
 Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries
@@ -902,7 +892,7 @@ Another interesting question is to observe relative popularity of specific genre
 Top 10 genres for top 24 music producers:
 TODO withincountry popularity: (% of country-level production)
 
-```{r, relativeproduction, echo=TRUE}
+```{r, relativeproduction, echo=FALSE}
 # todo genre favtor order different for each facet
 
 top_countries <- country_all[1:24, country]
@@ -948,4 +938,4 @@ genres_within_bar
 
 ## Conclusion
 
-Last.fm users do not constitute representative sample of world's music listeners. Hence, the number of scrobbles is an imperfect proxy to the number of times given artist has been listened to.
+Last.fm users do not constitute representative sample of world's music listeners. Hence, the number of scrobbles is an imperfect proxy to the number of times given artist has been listened to. 
