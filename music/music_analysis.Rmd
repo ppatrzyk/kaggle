@@ -911,13 +911,17 @@ for (i in 1:length(top_countries)) {
   genres_within_data[[i]] <- topgenres
 }
 genres_within_data <- rbindlist(genres_within_data)
+genres_within_data[, factor_order := factor(1:.N, levels = .N:1)]
 
 genres_within_bar <- ggplot(
   genres_within_data,
-  aes(factor(genre, levels = unique(genre)), country_perc)
+  aes(factor_order, country_perc)
 ) +
   geom_col(
     fill = '#ED7953FF'
+  ) +
+  scale_x_discrete(
+    labels = function(factor_no) genres_within_data[factor_order %in% factor_no, rev(genre)]
   ) +
   coord_flip() +
   labs(
