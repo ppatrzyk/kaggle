@@ -4,11 +4,21 @@ author: "Piotr Patrzyk"
 output: 
   html_document:
     keep_md: false
+    toc: true
+    toc_depth: 2
 ---
 
-## Introduction
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(
+  fig.align = 'center', 
+  out.width = '80%',
+  dev = 'svg'
+)
+```
 
-An exploratory analysis of data on the popularity of musical artists. Where do the most polular artists come from? Which musical genres are the most popular? Are musical genres tied to specific countries? These are the questions investigated in this kernel.
+# Introduction
+
+An exploratory analysis of data on music popularity. Where do the most polular artists come from? Which musical genres are the most popular? Are musical genres tied to specific countries? In this kernel I look at the country of origin of musical artists and compare what types of music specific countries export.
 
 ## Preparing data
 
@@ -389,7 +399,7 @@ lfm[is.na(artist), artist := artist_mb]
 lfm[, c("artist_mb", "genreset", "country_mb", "country_lastfm", "tags_mb", "tags_lastfm", "ambiguous_artist") := NULL]
 ```
 
-## Popularity distribution
+# Popularity distribution
 
 Having set up the data, let's see who are the top 100 artists (sorted by the number of listeners):
 
@@ -397,7 +407,11 @@ Having set up the data, let's see who are the top 100 artists (sorted by the num
 datatable(lfm[1:100, ])
 ```
 
-Now let's see how popularity is distrubuted in the entire dataset.
+The data is extremely skewed -- the vast majority of artists have a very small number of listeners and scrobbles while there are few ones with extraordinary popularity.
+
+## ECDF: listeners per artist
+
+Note that, x axis is pruned at 50,000 listeners -- this is approximately `r paste(round(100 * 50000 / lfm[1L, listeners_lastfm], 2), "%")` of how many listeners the top artist in dataset (i.e., Coldplay) has. 
 
 ```{r popularitycdf, echo=FALSE}
 lfm[is.na(listeners_lastfm), listeners_lastfm := 0]
@@ -437,6 +451,14 @@ ecdf_plot <- ggplot(
   ) +
   theme_light()
 
+print(ecdf_plot)
+```
+
+## Histogram: listeners per artist
+
+Note that artist count is displayed on a 4th-root-transformed scale.
+
+```{r popularityhistogram, echo=FALSE}
 listeners_hist <- ggplot(
   lfm, aes(x = listeners_lastfm)
 ) + 
@@ -463,18 +485,10 @@ listeners_hist <- ggplot(
   ) +
   theme_bw()
 
-
-print(summary(lfm[, listeners_lastfm]))
-print(ecdf_plot)
 print(listeners_hist)
 ```
 
-The data is extremely skewed -- the vast majority of artists have a very small number of listeners and scrobbles while there are few ones with extraordinary popularity.
-
-Note that:
-
-- in Empirical CDF plot, x axis is pruned at 50,000 listeners -- this is approximately `r paste(round(100 * 50000 / lfm[1L, listeners_lastfm], 2), "%")` of how many listeners the top artist in dataset (i.e., Coldplay) has. 
-- Histogram displays count on a 4th-root-transformed scale.
+## Listeners vs scrobbles scatter
 
 Another way to look at this is to see a scatterplot of listeners vs scrobbles for all artists in the world.
 
@@ -542,6 +556,8 @@ hexbin_scatter <- ggplot(
 print(hexbin_scatter)
 ```
 
+## Scrobbles concentration
+
 ```{r scrobblescumsum, echo = FALSE}
 scrobbles <- lfm[,
   .(artist, scrobbles_lastfm)
@@ -582,7 +598,7 @@ prop_rectangles <- ggplot(rectangles, aes(xmin = x, xmax = width, ymin = y, ymax
 prop_rectangles
 ```
 
-## Summarizing data
+# Summarizing data
 
 Summarizing data by country and genre poses the problem of handling missing values. In the dataset, any of these two variables can be missing -- hence, prior to proceeding we need to check if the presence of missing values is random. Because data is sensitive to outliers (very succesful bands), here I observe aggregated number of scrobbles in missing entires rather than their raw count. First, looking at a country-level, here is a summary of proportion of music with missing genre. In other words, if we a take a single country, for what proportion of music we cannot tell what genre is it.
 
@@ -677,7 +693,13 @@ genre_country[, genre_perc := round(100 * allscrobbles / genretotal, 2)]
 genre_country[, country_perc := round(100 * allscrobbles / countrytotal, 2)]
 ```
 
-## Top Genres
+# Top Genres
+
+Genre intro text.
+
+## All scrobbles by genre
+
+jazz vs classic rock comparison, summarize.
 
 ```{r topgenres, echo=FALSE, warning=FALSE}
 genres_top <- genres[
@@ -706,9 +728,9 @@ genres_scatter <- ggplot(genres_top, aes(artists, allscrobbles)) +
 genres_scatter
 ```
 
-jazz vs classic rock comparison, summarize.
+# Geography of music production
 
-## Geography of music production
+Where the top music is produced.
 
 ```{r leafletbase, echo=FALSE}
 # base map to be re-used
@@ -746,9 +768,11 @@ centers[which(world@data$country == "United Kingdom"), "x"] <- -0.93118
 centers[which(world@data$country == "United Kingdom"), "y"] <- 52.00022
 ```
 
+## Country ranking
+
 First, let's examine the ranking of all counties by the total number of scrobbles their artists produce. Countries on map are colored by the total number of scrobbles on a log scale and labeled by the top artists coming from there.
 
-```{r topbycountry, echo=FALSE}
+```{r countryranking, echo=FALSE}
 datatable(
   country_all[
     !is.na(country) & country != '' & allscrobbles > 10^5,
@@ -756,7 +780,38 @@ datatable(
     order(allscrobbles, decreasing = TRUE),
   ]
 )
+```
 
+## Country barplot
+
+```{r countrybarplot, echo=FALSE}
+country_bar_data <- rbindlist(list(
+  country_all[1:10, .(country, percent_of_all_scrobbles)],
+  country_all[11:.N, .('other', percent_of_all_scrobbles = sum(percent_of_all_scrobbles))]
+))
+country_bar_data[, country := factor(country, levels = rev(country))]
+
+country_bar <- ggplot(
+  country_bar_data,
+  aes(country, percent_of_all_scrobbles)
+) +
+  geom_col(
+    fill = '#ED7953FF'
+  ) +
+  coord_flip() +
+  labs(
+    title = "Where do most listened to music come from?",
+    x = "Music origin",
+    y = "Percent of world's listened to music"
+  ) +
+  theme_bw()
+
+country_bar
+```
+
+## Music production map
+
+```{r scrobblesmap, echo=FALSE}
 country_all[, logscrobbles := log10(allscrobbles + 1)]
 
 topartist_data <- world
@@ -806,52 +861,15 @@ totalscrobbles_map <- addPolygons(
 
 totalscrobbles_map
 # TODO: fix legend (log conversion)
-
-country_bar_data <- rbindlist(list(
-  country_all[1:10, .(country, percent_of_all_scrobbles)],
-  country_all[11:.N, .('other', percent_of_all_scrobbles = sum(percent_of_all_scrobbles))]
-))
-country_bar_data[, country := factor(country, levels = rev(country))]
-
-country_bar <- ggplot(
-  country_bar_data,
-  aes(country, percent_of_all_scrobbles)
-) +
-  geom_col(
-    fill = '#ED7953FF'
-  ) +
-  coord_flip() +
-  labs(
-    title = "Where do most listened to music come from?",
-    x = "Music origin",
-    y = "Percent of world's listened to music"
-  ) +
-  theme_bw()
-
-country_bar
 ```
 
-When looking at raw data, almost half (`r country_all[country == 'United States', percent_of_all_scrobbles]`%) of the songs listened to are made by artists coming from the United States. The next country, United Kingdom, generates `r country_all[country == 'United Kingdom', percent_of_all_scrobbles]`% of all scrobbles. This skew is even more apparent when looking at the origin of the top 1000 artists in the world:
+## Where USA and UK does not dominate
 
-```{r top100, echo=FALSE}
-datatable(
-  lfm[
-      1:1000, 
-      .(artists_in_top1k = .N, top = artist[1]), 
-      by = country
-    ][
-      order(artists_in_top1k, decreasing = TRUE), 
-    ][
-      !is.na(country),
-    ]
-)
-```
-
-Only `r lfm[1:1000, ][!(country %in% c('United States', 'United Kingdom')), .N]` of the top 1k artists do not come from either US or UK. In addition, the remainder either comes from other English-speaking countries or performs in English anyway. The only exceptions to the dominance of english music in *the mainstream* are all classical artists and German band *Rammstein*.
+When looking at raw data, almost half (`r country_all[country == 'United States', percent_of_all_scrobbles]`%) of the songs listened to are made by artists coming from the United States. The next country, United Kingdom, generates `r country_all[country == 'United Kingdom', percent_of_all_scrobbles]`% of all scrobbles. This skew is even more apparent when looking at the origin of the top 1000 artists in the world -- Only `r lfm[1:1000, ][!(country %in% c('United States', 'United Kingdom')), .N]` of the top 1k artists do not come from either US or UK.
 
 Having confirmed and quantified what is widely knows about the mainstream music, let's investigate whether this dominance is present for all genres.
 
-For which genres the top producer (by aggregate number of scrobbles) or the top artist is not from USA or UK? 
+For which genres the top producer (aggregated  scrobbles) is not USA or UK or the top artist is not from there? 
 
 ```{r topnotus, echo=FALSE}
 byscrobbles <- genre_country[
@@ -885,16 +903,11 @@ datatable(
 
 TODO additional maps here
 
-## Genre in country-level production
+# Genre in country-level production
 
-Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries
-
-Top 10 genres for top 24 music producers:
-TODO withincountry popularity: (% of country-level production)
+Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries. In other words, here I isolate top 24 countries and observe which genres make up their music export.
 
 ```{r, relativeproduction, echo=FALSE}
-# todo genre favtor order different for each facet
-
 top_countries <- country_all[1:24, country]
 genres_within_data <- replicate(24, data.table())
 for (i in 1:length(top_countries)) {
@@ -913,6 +926,8 @@ for (i in 1:length(top_countries)) {
 genres_within_data <- rbindlist(genres_within_data)
 genres_within_data[, factor_order := factor(1:.N, levels = .N:1)]
 
+# workaround to make genres appear in correct order
+# numeric factor plotted, thne replaced by correct label in scale
 genres_within_bar <- ggplot(
   genres_within_data,
   aes(factor_order, country_perc)
@@ -940,6 +955,6 @@ genres_within_bar <- ggplot(
 genres_within_bar
 ```
 
-## Conclusion
+# Conclusion
 
 Last.fm users do not constitute representative sample of world's music listeners. Hence, the number of scrobbles is an imperfect proxy to the number of times given artist has been listened to. 
