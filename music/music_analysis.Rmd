@@ -22,11 +22,25 @@ An exploratory analysis of data on music popularity. Where do the most polular a
 
 ## Preparing data
 
-First I read and prepare the data. This includes:
-
-- cleaning duplicates in artists,
-- establishing country of origin,
-- establishing single genre from tags.
+```{r helperfunctions, echo=FALSE}
+display_values <- function(number){
+  if(length(number) > 1){
+    return(sapply(number, display_values))
+  }
+  if(is.na(number) | is.null(number)){
+    number <- NA_character_
+  }else if(number < 10^3){
+    number <- as.character(round(number, 1))
+  }else if(number < 10^6){
+    number <- paste0(round(number / 10^3, 1), "k")
+  }else if(number < 10^9){
+    number <- paste0(round(number / 10^6, 1), "M")
+  }else if(number < 10^12){
+    number <- paste0(round(number / 10^9, 1),"B")
+  }
+  return(number)
+}
+```
 
 ```{r dataload, echo=FALSE, message = FALSE, warning = FALSE}
 library(data.table)
@@ -48,25 +62,19 @@ lfm[country_mb %in% c('Yugoslavia', 'Serbia and Montenegro'), country_mb := 'Ser
 lfm[country_mb == 'Europe', country_mb := NA_character_]
 ```
 
-```{r helperfunctions, echo=FALSE}
-display_values <- function(number){
-  if(length(number) > 1){
-    return(sapply(number, display_values))
-  }
-  if(is.na(number) | is.null(number)){
-    number <- NA_character_
-  }else if(number < 10^3){
-    number <- as.character(round(number, 1))
-  }else if(number < 10^6){
-    number <- paste0(round(number / 10^3, 1), "k")
-  }else if(number < 10^9){
-    number <- paste0(round(number / 10^6, 1), "M")
-  }else if(number < 10^12){
-    number <- paste0(round(number / 10^9, 1),"B")
-  }
-  return(number)
-}
+First I read and prepare the data. Dataset has `r nrow(lfm)` rows and `r ncol(lfm)` columns. First row:
+
+```{r examplerow, echo=FALSE}
+t(lfm[1L, ])
 ```
+
+Dataset needs to be cleaned; specifically, this entails:
+
+- removing duplicates in artists,
+- establishing single country of origin,
+- establishing single genre from list of tags.
+
+## Duplicated artist names
 
 Due to the fact that last.fm does dot disambiguate between different artists that have the same name (see dataset description), dataset contains some artists with duplicated listeners/scrobbles count, coming from the aggregate profile. For example:
 
@@ -101,7 +109,10 @@ duplicate_bar <- ggplot(
     x = "Name",
     y = "Unique artists"
   ) +
-  theme_bw()
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(color = "black", size = 12)
+  )
 
 duplicate_bar
 ```
@@ -130,6 +141,8 @@ fix <- fix[,
 lfm <- rbindlist(list(lfm, fix), fill = TRUE)
 rm(fix)
 ```
+
+## Unifying countries and genres
 
 Next I identify single country an artist comes from. The dataset contains conflicting information about artists' origin. Sometimes there is a legitimate ambiguity in what should be chosen, in other cases there is an incorrect information due to factual errors or artist duplicates. In either case, these need to be unified. Examples of problematic data:
 
@@ -449,7 +462,7 @@ ecdf_plot <- ggplot(
     size = 0.5,
     linetype = "dashed"
   ) +
-  theme_light()
+  theme_bw()
 
 print(ecdf_plot)
 ```
@@ -551,7 +564,7 @@ hexbin_scatter <- ggplot(
     # ggplot_build(hexbin_scatter)$data[[1]]
     size = 3.5
   ) +
-  theme_light()
+  theme_bw()
 
 print(hexbin_scatter)
 ```
@@ -578,7 +591,7 @@ All world scrobbles (i.e., track plays) are concentrated on very limited set of 
 
 Visualizing this:
 
-```{r propviz, echo=FALSE}
+```{r propviz, echo=FALSE, fig.height=2}
 rectangles <- data.table(
   x = 0,
   y = rep(c(1, 2), 2),
@@ -695,11 +708,11 @@ genre_country[, country_perc := round(100 * allscrobbles / countrytotal, 2)]
 
 # Top Genres
 
-Genre intro text.
+What are the top musical genres in the dataset?
 
 ## All scrobbles by genre
 
-jazz vs classic rock comparison, summarize.
+A scatterplot of number of artists and aggregated number of scrobbles for each genre. Top genres are annotated.
 
 ```{r topgenres, echo=FALSE, warning=FALSE}
 genres_top <- genres[
@@ -770,7 +783,7 @@ centers[which(world@data$country == "United Kingdom"), "y"] <- 52.00022
 
 ## Country ranking
 
-First, let's examine the ranking of all counties by the total number of scrobbles their artists produce. Countries on map are colored by the total number of scrobbles on a log scale and labeled by the top artists coming from there.
+First, let's examine the ranking of all counties by the total number of scrobbles their artists produce. 
 
 ```{r countryranking, echo=FALSE}
 datatable(
@@ -811,37 +824,43 @@ country_bar
 
 ## Music production map
 
-```{r scrobblesmap, echo=FALSE}
-country_all[, logscrobbles := log10(allscrobbles + 1)]
+Countries on map are colored by the total number of scrobbles produced (empirical quantile) labeled by the top artists coming from there. Click onn a country to get its name and actual scrobble count.
 
+```{r scrobblesmap, echo=FALSE}
 topartist_data <- world
 topartist_data@data <- merge(
   topartist_data@data,
   country_all[,
-    .(country, topartist, logscrobbles, allscrobbles, popup = paste(display_values(logscrobbles)))
+    .(
+      country, 
+      topartist, 
+      allscrobbles, 
+      popup = paste0(
+        country, ': ', display_values(allscrobbles), ' scrobbles'
+      )
+    )
   ],
   all.x = TRUE,
   by = 'country'
 )
 topartist_data@data <- topartist_data@data[order(topartist_data@data$index), ]
 
-color_pal <- colorNumeric(
-  palette = "plasma",
-  reverse = FALSE,
-  domain = topartist_data@data$logscrobbles, 
-  na.color = "transparent"
+quant_pal <- colorQuantile(
+  viridis_pal(alpha = 1, begin = 0, end = 1, direction = 1, option = "plasma")(10), 
+  topartist_data@data$allscrobbles, 
+  n = 10
 )
 
 totalscrobbles_map <- addPolygons(
   world_map, data = topartist_data,
   color = "black", opacity = 1, weight = 1,
-  smoothFactor = 0.2, fillOpacity = 0.6, fillColor = ~color_pal(logscrobbles),
+  smoothFactor = 0.2, fillOpacity = 0.6, fillColor = ~quant_pal(allscrobbles),
   popup = topartist_data@data$popup,
   options = pathOptions(pane = "polygons")
 ) %>%
   leaflet::addLegend(
-    position = "bottomright", values = topartist_data@data$logscrobbles,
-    title = "Genre", pal = color_pal, opacity = 1
+    position = "bottomright", values = topartist_data@data$allscrobbles,
+    title = "Total scrobbles", pal = quant_pal, opacity = 1
   ) %>%
   addLabelOnlyMarkers(
     data = centers, lng = ~x, lat = ~y, 
@@ -860,7 +879,6 @@ totalscrobbles_map <- addPolygons(
   )
 
 totalscrobbles_map
-# TODO: fix legend (log conversion)
 ```
 
 ## Where USA and UK does not dominate
@@ -907,7 +925,7 @@ TODO additional maps here
 
 Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries. In other words, here I isolate top 24 countries and observe which genres make up their music export.
 
-```{r, relativeproduction, echo=FALSE}
+```{r, relativeproduction, echo=FALSE, fig.height=60}
 top_countries <- country_all[1:24, country]
 genres_within_data <- replicate(24, data.table())
 for (i in 1:length(top_countries)) {
@@ -925,6 +943,7 @@ for (i in 1:length(top_countries)) {
 }
 genres_within_data <- rbindlist(genres_within_data)
 genres_within_data[, factor_order := factor(1:.N, levels = .N:1)]
+genres_within_data[, country := factor(country, levels = unique(country))]
 
 # workaround to make genres appear in correct order
 # numeric factor plotted, thne replaced by correct label in scale
@@ -945,11 +964,14 @@ genres_within_bar <- ggplot(
     y = "Percent of produced music"
   ) +
   theme_bw() +
+  theme(
+    axis.text.y = element_text(color = "black", size = 12)
+  ) +
   facet_wrap(
     vars(country), 
     scales = "free",
-    nrow = 6,
-    ncol = 4
+    nrow = 12,
+    ncol = 2
   )
 
 genres_within_bar
