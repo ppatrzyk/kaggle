@@ -57,7 +57,7 @@ library(DT)
 library(leaflet)
 library(wordcloud)
 
-lfm <- fread('artists.csv', encoding = 'UTF-8', na.strings = '')
+lfm <- fread('../input/artists.csv', encoding = 'UTF-8', na.strings = '')
 lfm[country_mb == "Soviet Union", country_mb := 'Russia']
 lfm[country_mb == "East Germany", country_mb := 'Germany']
 lfm[country_mb == "Czechoslovakia", country_mb := 'Czech Republic']
@@ -817,7 +817,7 @@ country_bar <- ggplot(
   ) +
   coord_flip() +
   labs(
-    title = "Where does the most listened music come from?",
+    title = "Proportion of all scrobbles by artist origin",
     x = "Music origin",
     y = "Percent of world's listened to music"
   ) +
@@ -885,7 +885,7 @@ totalscrobbles_map <- addPolygons(
 totalscrobbles_map
 ```
 
-## Where USA and UK do not dominate
+## Country barplots by genre
 
 When looking at raw data, almost half (`r country_all[country == 'United States', percent_of_all_scrobbles]`%) of the songs listened to are made by artists coming from the United States. The next country, United Kingdom, generates `r country_all[country == 'United Kingdom', percent_of_all_scrobbles]`% of all scrobbles. This skew is even more apparent when looking at the origin of the top 1000 artists in the world -- Only `r lfm[1:1000, ][!(country %in% c('United States', 'United Kingdom')), .N]` of the top 1k artists do not come from either US or UK.
 
@@ -893,9 +893,9 @@ Having confirmed and quantified what is widely know about the mainstream music, 
 
 There is some variablity in country rankings when we look at specific genres rather that the entire data:
 
-```{r bygenreranks, echo=FALSE, fig.height=240}
-top_genres <- genres[1:96, genre]
-genres_rank_data <- replicate(96, data.table())
+```{r bygenreranks, echo=FALSE, fig.height=120}
+top_genres <- genres[1:48, genre]
+genres_rank_data <- replicate(48, data.table())
 for (i in 1:length(top_genres)) {
   current_genre <- top_genres[i]
   current_subset <- genre_country[
@@ -936,7 +936,7 @@ genres_rank_bar <- ggplot(
   facet_wrap(
     vars(genre), 
     scales = "free",
-    nrow = 48,
+    nrow = 24,
     ncol = 2
   )
 
@@ -975,7 +975,7 @@ datatable(
 )
 ```
 
-# Genre in country-level production
+# Genre rankings in specific countries
 
 Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries. In other words, here I isolate top 24 countries and observe which genres make up their music export.
 
@@ -1011,7 +1011,7 @@ genres_within_bar <- ggplot(
   ) +
   coord_flip() +
   labs(
-    title = "Within country popularity",
+    title = "Genres produced by local artists",
     x = "Genre",
     y = "Percent of produced music"
   ) +
