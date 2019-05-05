@@ -148,8 +148,8 @@ Next, I identify single country an artist comes from. The dataset contains confl
 
 ```{r countryexample, echo=FALSE}
 lfm[
-  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Gotan Project', 'Arkona'),
-  .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
+  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Garbage', 'Gotan Project', 'Arkona'),
+  .(artist_mb, country_mb, country_lastfm)
 ]
 ```
 
