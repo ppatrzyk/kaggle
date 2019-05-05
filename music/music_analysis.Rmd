@@ -12,13 +12,13 @@ output:
 knitr::opts_chunk$set(
   fig.align = 'center', 
   out.width = '80%',
-  dev = 'svg'
+  dev = 'png'
 )
 ```
 
 # Introduction
 
-An exploratory analysis of data on music popularity. Where do the most polular artists come from? Which musical genres are the most popular? Are musical genres tied to specific countries? In this kernel I look at the country of origin of musical artists and compare what types of music specific countries export.
+An exploratory analysis of data on music popularity. Where do the most popular artists come from? Which musical genres are the most popular? Are musical genres tied to specific countries? In this kernel, I look at the country of origin of musical artists and compare what types of music specific countries export.
 
 ## Preparing data
 
@@ -85,7 +85,7 @@ lfm[
 ]
 ```
 
-Let's investigate and quantify the problem. First these are top 10 repeated artist names in the dataset (exact name match, case insensitive):
+Let's investigate and quantify the problem. First these are the top 10 repeated artist names in the dataset (exact name match, case insensitive):
 
 ```{r duplicates, echo=FALSE}
 name_duplicates <- lfm[,
@@ -117,7 +117,7 @@ duplicate_bar <- ggplot(
 duplicate_bar
 ```
 
-In general, `r paste0(round(100 * name_duplicates[unique_artists > 1, sum(unique_artists)] / name_duplicates[, sum(unique_artists)], 2), "%")` of all artists recorded in the dataset have name that is not unique. That's a non-negligible proportion. On the one hand, this can be expected -- people have similar ideas and they will come up with exactly the same names independently. On the other, it's kind of surprising that some artists do not appear to seek originality and pick names that are unique. Why would anyone pick a name that is already taken by at least 80 other artists in the world (many of them still active and present online)? For current purposes, I collapse ambiguous artists (`ambiguous_artist == TRUE`) into one row per artist name.
+In general, `r paste0(round(100 * name_duplicates[unique_artists > 1, sum(unique_artists)] / name_duplicates[, sum(unique_artists)], 2), "%")` of all artists recorded in the dataset have a name that is not unique. That's a non-negligible proportion. On the one hand, this can be expected -- people have similar ideas and they will come up with exactly the same names independently. On the other, it's kind of surprising that some artists do not appear to seek originality and pick names that are unique. Why would anyone pick a name that is already taken by at least 80 other artists in the world (many of them still active and present online)? For current purposes, I collapse ambiguous artists (`ambiguous_artist == TRUE`) into one row per artist name.
 
 ```{r collapseartists, echo=FALSE}
 lfm[, mbid := NULL]
@@ -144,11 +144,11 @@ rm(fix)
 
 ## Unifying countries and genres
 
-Next I identify single country an artist comes from. The dataset contains conflicting information about artists' origin. Sometimes there is a legitimate ambiguity in what should be chosen, in other cases there is an incorrect information due to factual errors or artist duplicates. In either case, these need to be unified. Examples of problematic data:
+Next, I identify single country an artist comes from. The dataset contains conflicting information about artists' origin. Sometimes there is a legitimate ambiguity in what should be chosen, in other cases there is an incorrect information due to factual errors or artist duplicates. In either case, these need to be unified. Examples of problematic data:
 
 ```{r countryexample, echo=FALSE}
 lfm[
-  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Gotan Project', 'Garbage', 'Arkona'),
+  artist_lastfm %in% c('Rihanna', 'System of a Down', 'Shakira', 'Gotan Project', 'Arkona'),
   .(artist_mb, country_mb, country_lastfm, listeners_lastfm)
 ]
 ```
@@ -160,7 +160,7 @@ The approach is the following:
 - else if there is only one country in MusicBrainz tags, this one is chosen,
 - to resolve conflicts in remaining entries, the most frequest country in last.fm tags is chosen.
 
-Note, as there is no way to automatically verify whether multiple countries in last.fm tags relate to one artist or multiple artists sharing one profile, in the fourth step we might end up with an overestimate of artist popularity (only one end up being chosen, but their scobble count come from a shared profile).
+Note, as there is no way to automatically verify whether multiple countries in last.fm tags relate to one artist or multiple artists sharing one profile, in the fourth step we might end up with an overestimate of artist popularity (only one end up being chosen, but their scrobble count comes from a shared profile).
 
 ```{r countryfix, echo=FALSE}
 # unify countries
@@ -212,7 +212,7 @@ rm(tags, countries)
 lfm[country == '', country := NA_character_]
 ```
 
-In the next step I assign genre to each artist. This step requires investigating all tags and identifying unique genres in them. This requires some aggregation over different spelling, qualifiers, etc. First I read all tags to a separate data.table.
+In the next step, I assign genre to each artist. This step requires investigating all tags and identifying unique genres in them. This requires some aggregation over different spelling, qualifiers, etc. First, I read all tags to a separate data.table.
 
 ```{r tagexploration, echo=FALSE}
 tags_lfm <- as.data.table(table(tolower(
@@ -239,7 +239,7 @@ wordcloud(
 A quick glance at tags reveals that:
 
 - a lot of information is not related to the genre of music (e.g., *(fe)male vocalists*, *seen live*, *under 2000 listeners*, etc.),
-- there are a lot of 'compound' tags -- for instance, instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags such as *true oldschool norwegian black metal*. As a consequence, there are multiple tags referring (roughly) to the same genre. 
+- there are a lot of 'compound' tags -- for instance, instead of tagging a band with tags *norwegian* **and** *black metal*, people assign tags, such as *true oldschool norwegian black metal*. As a consequence, there are multiple tags referring (roughly) to the same genre. 
 
 For instance there are `r tags_lfm[grepl('black.*metal', V1), .N]` unique *black metal* tags. Top 10:
 
@@ -251,7 +251,7 @@ The approach to establishing a single genre is the following:
 
 - for each artist, get a rank of last.fm tags,
 - pick the most popular tag,
-- if the picked tag is not related to genre, iteratively replace by next tag in the rank,
+- if the picked tag is not related to genre, iteratively replace by the next tag in the rank,
 - if establishing genre form last.fm tags failed, repeat the process on musicbrainz tag data.
 
 ```{r genreaggregation1, echo=FALSE}
@@ -303,7 +303,7 @@ lfm[, paste0('tag', 1:10) := NULL]
 lfm[, genre := tolower(genre)]
 ```
 
-This approach yields `r lfm[, uniqueN(genre)]` unique genres, which are now aggregated. The approach here is to either find all instances of given genre via regex and unify all to one spelling (e.g., *hip-hop*), or if there are a lot of subtypes of given genre, retain some arbitrary number of most frequest ones and aggregate remainig ones into a general type (e.g., *metal*). Less frequent tags are aggregater as *other*. As I wanted to keep the number of unique genres minimal so there are some necessary arbitrary simplifications in this step (e.g., *brutal apocalyptic black gothic doom metal* becomes *black metal*).
+This approach yields `r lfm[, uniqueN(genre)]` unique genres, which are now aggregated. The approach here is to either find all instances of given genre via regex and unify all to one spelling (e.g., *hip-hop*), or if there are a lot of subtypes of given genre, retain some arbitrary number of most frequest ones and aggregate remainig ones into a general type (e.g., *metal*). Less frequent tags are aggregater as *other*. As I wanted to keep the number of unique genres minimal, there are some necessary arbitrary simplifications in this step (e.g., *brutal apocalyptic black gothic doom metal* becomes *black metal*).
 
 ```{r genreaggregation2, echo=FALSE}
 lfm[
@@ -586,8 +586,8 @@ scrobbles[, distance_90 := abs(proportion - 0.9)]
 
 All world scrobbles (i.e., track plays) are concentrated on very limited set of artists. Specifically:
 
-- 50% of the world's scrobbles is generated by `r sprintf('%s (%s%%)', scrobbles[, which.min(distance_half)], round(100 * scrobbles[, which.min(distance_half)] / scrobbles[, .N], 2))`
-- 90% of all scrobbles are generated by `r sprintf('%s (%s%%)', scrobbles[, which.min(distance_90)], round(100 * scrobbles[, which.min(distance_90)] / scrobbles[, .N], 2))`
+- 50% of the world's scrobbles is generated by `r sprintf('%s (%s%%)', scrobbles[, which.min(distance_half)], round(100 * scrobbles[, which.min(distance_half)] / scrobbles[, .N], 2))` artists,
+- 90% of all scrobbles are generated by `r sprintf('%s (%s%%)', scrobbles[, which.min(distance_90)], round(100 * scrobbles[, which.min(distance_90)] / scrobbles[, .N], 2))` artists.
 
 Visualizing this:
 
@@ -613,7 +613,7 @@ prop_rectangles
 
 # Summarizing data
 
-Summarizing data by country and genre poses the problem of handling missing values. In the dataset, any of these two variables can be missing -- hence, prior to proceeding we need to check if the presence of missing values is random. Because data is sensitive to outliers (very succesful bands), here I observe aggregated number of scrobbles in missing entires rather than their raw count. First, looking at a country-level, here is a summary of proportion of music with missing genre. In other words, if we a take a single country, for what proportion of music we cannot tell what genre is it.
+Summarizing data by country and genre poses the problem of handling missing values. In the dataset, any of these two variables can be missing -- hence, prior to proceeding we need to check if the presence of missing values is random. Because data is sensitive to outliers (very succesful bands), here I observe aggregated number of scrobbles in missing entries rather than their raw count. First, looking at a country-level, here is a summary of proportion of music with missing genre. In other words, if we a take a single country, for what proportion of music we cannot tell what genre is it.
 
 ```{r missinggenrecheck, echo=FALSE}
 country_test <- dcast.data.table(
@@ -651,7 +651,7 @@ genre_test[, prop_missing := round(missing / (missing + present), 2)]
 genre_test[, summary(prop_missing)]
 ```
 
-Inspection reveals that it is not possible to reliably analyze genre vs. country associations for less popular genres or smaller countries, as non-negligible proportion of data is missing. However, for bigger categories, there is only about ~5% of data in other category missing and this number is stable across diffrent categories (countires or genres). In subsequent analysis I take subset of data where both country and genre information is present.
+Inspection reveals that it is not possible to reliably analyze genre vs. country associations for less popular genres or smaller countries, as non-negligible proportion of data is missing. However, for bigger categories, there is only about ~5% of data in other category missing and this number is stable across diffrent categories (countires or genres). In subsequent analysis, I take subset of data where both country and genre information is present.
 
 ```{r summarysubsets, echo=FALSE}
 genres <- lfm[
@@ -814,7 +814,7 @@ country_bar <- ggplot(
   ) +
   coord_flip() +
   labs(
-    title = "Where do most listened to music come from?",
+    title = "Where does the most listened music come from?",
     x = "Music origin",
     y = "Percent of world's listened to music"
   ) +
@@ -825,7 +825,7 @@ country_bar
 
 ## Music production map
 
-Countries on map are colored by the total number of scrobbles produced (empirical quantile) labeled by the top artists coming from there. Click onn a country to get its name and actual scrobble count.
+Countries on map are colored by the total number of scrobbles produced (empirical quantile) labeled by the top artists coming from there. Click on a country to get its name and actual scrobble count.
 
 ```{r scrobblesmap, echo=FALSE}
 topartist_data <- world
@@ -882,11 +882,11 @@ totalscrobbles_map <- addPolygons(
 totalscrobbles_map
 ```
 
-## Where USA and UK does not dominate
+## Where USA and UK do not dominate
 
 When looking at raw data, almost half (`r country_all[country == 'United States', percent_of_all_scrobbles]`%) of the songs listened to are made by artists coming from the United States. The next country, United Kingdom, generates `r country_all[country == 'United Kingdom', percent_of_all_scrobbles]`% of all scrobbles. This skew is even more apparent when looking at the origin of the top 1000 artists in the world -- Only `r lfm[1:1000, ][!(country %in% c('United States', 'United Kingdom')), .N]` of the top 1k artists do not come from either US or UK.
 
-Having confirmed and quantified what is widely knows about the mainstream music, let's investigate whether this dominance is present for all genres.
+Having confirmed and quantified what is widely know about the mainstream music, let's investigate whether this dominance is present for all genres.
 
 There is some variablity in country rankings when we look at specific genres rather that the entire data:
 
@@ -940,7 +940,7 @@ genres_rank_bar <- ggplot(
 genres_rank_bar
 ```
 
-List of genres where the top producer (aggregated scrobbles) is not USA or UK or the top artist is not from there: 
+List of genres where the top producer (aggregated scrobbles) is neither USA nor UK or the top artist is not from there: 
 
 ```{r topnotus, echo=FALSE}
 byscrobbles <- genre_country[
