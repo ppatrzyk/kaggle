@@ -779,6 +779,7 @@ centers[which(world@data$country == "United States"), "x"] <- -101.44575
 centers[which(world@data$country == "United States"), "y"] <- 39.75996
 centers[which(world@data$country == "United Kingdom"), "x"] <- -0.93118
 centers[which(world@data$country == "United Kingdom"), "y"] <- 52.00022
+centers[which(world@data$country == "Bosnia and Herzegovina"), "y"] <- 43.4
 ```
 
 ## Country ranking
@@ -887,7 +888,59 @@ When looking at raw data, almost half (`r country_all[country == 'United States'
 
 Having confirmed and quantified what is widely knows about the mainstream music, let's investigate whether this dominance is present for all genres.
 
-For which genres the top producer (aggregated  scrobbles) is not USA or UK or the top artist is not from there? 
+There is some variablity in country rankings when we look at specific genres rather that the entire data:
+
+```{r bygenreranks, echo=FALSE, fig.height=240}
+top_genres <- genres[1:96, genre]
+genres_rank_data <- replicate(96, data.table())
+for (i in 1:length(top_genres)) {
+  current_genre <- top_genres[i]
+  current_subset <- genre_country[
+    order(genre_perc, decreasing = TRUE),
+  ][
+    genre == current_genre, 
+  ]
+  topgenres <- rbindlist(list(
+    current_subset[1:10, .(genre = current_genre, country, genre_perc)],
+    current_subset[11:.N, .(genre = current_genre, 'other', genre_perc = sum(genre_perc))]
+  ))
+  genres_rank_data[[i]] <- topgenres
+}
+genres_rank_data <- rbindlist(genres_rank_data)
+genres_rank_data[, factor_order := factor(1:.N, levels = .N:1)]
+genres_rank_data[, genre := factor(genre, levels = unique(genre))]
+
+genres_rank_bar <- ggplot(
+  genres_rank_data,
+  aes(factor_order, genre_perc)
+) +
+  geom_col(
+    fill = '#ED7953FF'
+  ) +
+  scale_x_discrete(
+    labels = function(factor_no) genres_rank_data[factor_order %in% factor_no, rev(country)]
+  ) +
+  coord_flip() +
+  labs(
+    title = "Country ranking for specific genres",
+    x = "Country",
+    y = "Percent of produced music"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(color = "black", size = 12)
+  ) +
+  facet_wrap(
+    vars(genre), 
+    scales = "free",
+    nrow = 48,
+    ncol = 2
+  )
+
+genres_rank_bar
+```
+
+List of genres where the top producer (aggregated scrobbles) is not USA or UK or the top artist is not from there: 
 
 ```{r topnotus, echo=FALSE}
 byscrobbles <- genre_country[
@@ -919,8 +972,6 @@ datatable(
 )
 ```
 
-TODO additional maps here
-
 # Genre in country-level production
 
 Another interesting question is to observe relative popularity of specific genres within the entire music produced by specific countries. In other words, here I isolate top 24 countries and observe which genres make up their music export.
@@ -945,8 +996,6 @@ genres_within_data <- rbindlist(genres_within_data)
 genres_within_data[, factor_order := factor(1:.N, levels = .N:1)]
 genres_within_data[, country := factor(country, levels = unique(country))]
 
-# workaround to make genres appear in correct order
-# numeric factor plotted, thne replaced by correct label in scale
 genres_within_bar <- ggplot(
   genres_within_data,
   aes(factor_order, country_perc)
