@@ -1026,6 +1026,8 @@ genres_within_bar <- ggplot(
 genres_within_bar
 ```
 
-# Conclusion
+# Limitations
 
-Last.fm users do not constitute representative sample of world's music listeners. Hence, the number of scrobbles is an imperfect proxy to the number of times given artist has been listened to. 
+- Last.fm users do not constitute representative sample of world's music listeners. Hence, the number of scrobbles is an imperfect proxy to the number of times given artist has been listened to. Dominance of western music is determined in part by the fact that the majority of Last.fm users come from these countries. It is very likely that especially African artists have quite bad statistics due to the lack of domestic fans being present on Last.fm.
+
+- Last.fm started to store data only fairly recently in the history -- for this reason the popularity of older artists ('older' here means even artists from 1990s) is underestimated -- Last.fm did not collect data on listening habits while these artists had peak of their popularity.
