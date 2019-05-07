@@ -1,18 +1,49 @@
 ---
-title: "Direct Games"
+title: "Head-to-head: An interactive d3 map"
 author: "Piotr Patrzyk"
 output: 
   html_document:
     keep_md: false
-    toc: true
-    toc_depth: 2
 ---
 
 ```{r setup, include=FALSE}
 library(data.table)
 library(r2d3)
+library(jsonlite)
 
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(
+  echo = FALSE,
+  out.width = '100%'
+)
+```
+
+```{r customcss, results="asis"}
+cat("
+<style>
+svg {
+  display: block;
+  margin: auto;
+}
+
+.tooltip {
+  position: absolute;
+  text-align: center;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  background: #d4d6d8;
+  border: 0px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.country-border {
+  stroke: white;
+  stroke-width: 0.5;
+}
+</style>
+")
 ```
 
 ```{r dataload}
@@ -25,6 +56,7 @@ TODO intro Dataset is inconsistent about treatment of nonexistent countries: Sov
 games[, goal_diff := home_score - away_score]
 unique_teams <- games[, unique(c(home_team, away_team))]
 outcomes_list <- replicate(length(unique_teams), data.table())
+names(outcomes_list) <- unique_teams
 for (i in 1:length(unique_teams)) {
   current_team <- unique_teams[i]
   current_games <- games[home_team == current_team | away_team == current_team, ]
@@ -40,21 +72,29 @@ for (i in 1:length(unique_teams)) {
     ),
     by = rival
   ]
-  outcomes[, winloss_ratio := win/loss]
-  outcomes_list[[i]] <- outcomes
+  outcomes[, tooltip := sprintf('W:%s D:%s L:%s', win, draw ,loss)]
+  #TODO difference (win-loss) / percent win (draw ignored) / ratio
+  outcomes[, difference := (win - loss)]
+  outcomes_list[[i]] <- outcomes[, .(rival, tooltip, difference)]
   # TODO outcomes is a dt for single country (current_team)
   # return suitable json r2d3 or rjson tojson
 }
 
-outcomes <- rbindlist(outcomes_list)
+# outcomes <- rbindlist(outcomes_list)
+
+#TODO scale max for each country
+
+# correct format
+test <- 1:5
+names(test) <- letters[1:5]
+toJSON(as.list(test), auto_unbox = TRUE)
 
 bars <- c(10, 20, 40)
 ```
 
-Actual d3 viz:
+d3 test:
 
-```{d3 map, data=bars}
-# test code copypasted from r2d3 website
+```{d3 test, data=bars}
 svg.selectAll('rect')
   .data(data)
   .enter()
@@ -63,5 +103,103 @@ svg.selectAll('rect')
       .attr('height', '20px')
       .attr('y', function(d, i) { return i * 22; })
       .attr('fill', 'blue');
+```
+
+Map:
+
+todo difference centered at 0
+
+```{d3 map, data=outcomes_list}
+var margin = {top: 25, right: 25, bottom: 25, left: 25};
+var map_default_scale = 0.7 * 175.295;
+var difference_min = null;
+var difference_max = null;
+// todo change to divergent scale neutral at 0
+var color_scale = d3.scaleSequential(d3.interpolateViridis);
+var missing_color = "#000000";
+
+var map = svg
+  .attr("width", width + margin.left + margin.right)
+  .attr("height", height + margin.top + margin.bottom)
+  .attr("class", "border")
+  .append("g")
+  .attr("transform", "translate(" + margin.left + "," + margin.top + ")")
+  .attr("id", "mapgroup");
+
+function render_map(map_json, difference, tooltip){
+  for (var key in difference) {
+    if (difference.hasOwnProperty(key)) {
+      // TODO This fails there is no key in json
+      var current_difference = difference[key];
+      var current_tooltip = tooltip[key];
+      if (!difference_min || current_difference < difference_min){
+        difference_min = current_difference;
+      }
+      if (!difference_max || current_difference > difference_max){
+        difference_max = current_difference;
+      }
+      for (var i = 0; i < map_json.features.length; i++) {
+        var current_country = map_json.features[i].properties.admin;
+        if (key == current_country) {
+          map_json.features[i].properties.difference = current_difference;
+          map_json.features[i].properties.tooltip = current_tooltip;
+          break;
+        }
+      }
+    }
+  }
+
+  color_scale.domain([difference_min, difference_max])
+  
+  var projection = d3.geoNaturalEarth1()
+    .translate([width/2, height/2])
+    .scale(map_default_scale);
+
+  var path = d3.geoPath().projection(projection);
+  
+  var map_tooltip = d3.select("body").append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);  
+    
+  map.append("rect")
+    .attr("x", 0).attr("y", 0)
+    .attr("width", width).attr("height", height)
+    .attr('fill', '#cfeff9')
+    .attr("opacity", 0);
+  
+  map.selectAll("path")
+    .data(map_json.features)
+    .enter()
+    .append("path")
+    .attr("d", path)
+    .attr("class", "country-border")
+    .style("fill", function(d) {
+      var value = d.properties.difference;
+      if (value) {
+        return color_scale(value);
+      } else {
+        return missing_color;
+      }
+    })
+    .on("mouseover", function(d) {
+      var content = d.properties.tooltip;
+      if (typeof content !== 'undefined'){
+        map_tooltip.transition().duration(200).style("opacity", 0.9);
+        map_tooltip.html(content)
+          .style("left", (d3.event.pageX) + "px")
+          .style("top", (d3.event.pageY - 28) + "px");
+      }
+    })
+    .on("mouseout", function(d) {
+        map_tooltip.transition().duration(500).style("opacity", 0);
+    });
+};
+
+d3.json('https://raw.githubusercontent.com/ppatrzyk/kaggle/master/football/map.json')
+  .then(function(map_json){
+    // todo missing args here
+    render_map(map_json);
+  });
+
 ```
 
