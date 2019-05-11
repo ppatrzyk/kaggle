@@ -46,16 +46,37 @@ svg {
 ")
 ```
 
+# Introduction
+
+In this kernel I visualize head-to-head balances in international footbal games. For any given team, you can quickly look up:
+
+- what other teams have they played against,
+- with whom do they usually win or lose.
+
+## Dataset
+
 ```{r dataload}
 games <- fread('results.csv', encoding = 'UTF-8')
 ```
 
-TODO intro Dataset is inconsistent about treatment of nonexistent countries: Soviet Union labeled as Russia, but German DR, Czechoslovakia, Yugoslavia left intact
+The dataset contains `r games[, .N]` matches played by `r games[, uniqueN(c(home_team, away_team))]` different teams. The coverage is quite good as there is even information of games such as:
+
+```{r tibetexample}
+games[
+  home_team == 'Greenland' & away_team == 'Tibet', 
+  .(date, home_team, away_team, home_score, away_score, city)
+]
+```
+
+## Data aggregation
+
+The dataset is aggregated to obtain head-to-head summary (#wins, #draws, #losses) for all team pairs in the dataset.
 
 ```{r getresults}
 games[, goal_diff := home_score - away_score]
 unique_teams <- games[, unique(c(home_team, away_team))]
-outcomes_list <- replicate(length(unique_teams), data.table())
+# outcomes_list is in r2d3-friendly format, headtoheadfor analysis in R
+outcomes_list <- headtohead <- replicate(length(unique_teams), data.table())
 names(outcomes_list) <- unique_teams
 for (i in 1:length(unique_teams)) {
   current_team <- unique_teams[i]
@@ -65,6 +86,7 @@ for (i in 1:length(unique_teams)) {
   current_games[location_home == FALSE, goal_diff := -goal_diff]
   outcomes <- current_games[,
     .(
+      team = current_team,
       win = sum(goal_diff > 0),
       draw = sum(goal_diff == 0),
       loss = sum(goal_diff < 0),
@@ -72,50 +94,65 @@ for (i in 1:length(unique_teams)) {
     ),
     by = rival
   ]
-  outcomes[, tooltip := sprintf('W:%s D:%s L:%s', win, draw ,loss)]
-  #TODO difference (win-loss) / percent win (draw ignored) / ratio
   outcomes[, difference := (win - loss)]
-  outcomes_list[[i]] <- outcomes[, .(rival, tooltip, difference)]
-  # TODO outcomes is a dt for single country (current_team)
-  # return suitable json r2d3 or rjson tojson
+  outcomes[, metric := round(difference / total, 2)]
+  tooltip <- outcomes[, sprintf('%s vs. %s<br>W:%s D:%s L:%s', current_team, rival, win, draw ,loss)]
+  metric <- outcomes[, metric]
+  total <- outcomes[, total]
+  names(metric) <- names(tooltip) <- names(total) <- outcomes[, rival]
+  headtohead[[i]] <- outcomes[, .(team, rival, win, draw, loss, difference, total, metric)]
+  outcomes_list[[i]] <- list(
+    metric = as.list(metric),
+    total = as.list(total),
+    tooltip = as.list(tooltip)
+  )
 }
-
-# outcomes <- rbindlist(outcomes_list)
-
-#TODO scale max for each country
-
-# correct format
-test <- 1:5
-names(test) <- letters[1:5]
-toJSON(as.list(test), auto_unbox = TRUE)
-
-bars <- c(10, 20, 40)
+headtohead <- rbindlist(headtohead)
+# toJSON(outcomes_list, auto_unbox = TRUE)
 ```
 
-d3 test:
+Aggregated data has `r headtohead[, .N]` rows. As the summary is generated both ways, e.g.:
 
-```{d3 test, data=bars}
-svg.selectAll('rect')
-  .data(data)
-  .enter()
-    .append('rect')
-      .attr('width', function(d) { return d * 10; })
-      .attr('height', '20px')
-      .attr('y', function(d, i) { return i * 22; })
-      .attr('fill', 'blue');
+```{r engswissex}
+headtohead[
+  (team == 'England' & rival == 'Switzerland') | (rival == 'England' & team == 'Switzerland'),
+  .(team, rival, win, draw, loss)
+]
 ```
 
-Map:
+This means that there are `r headtohead[, .N/2]` unique pairs. Given that there are `r paste0('choose(294, 2)', ' = ', choose(games[, uniqueN(c(home_team, away_team))], 2))` possible pairs, this means that only `r paste0(round(100 * headtohead[, .N/2] / choose(games[, uniqueN(c(home_team, away_team))], 2), 2), "%")` of possible matches actually took place.
 
-todo difference centered at 0
+Top 10 most often meeting teams:
+
+```{r totalmax}
+headtohead[order(-total), ][seq(1, 20, 2), .(team, rival, win, draw, loss, total)]
+```
+
+todo headtohead: 1 historical games hungary 2 transitivity find example
+
+The metric that is displayed on the map below is obtained by using the formula: 
+
+$$
+metric = \frac{won-lost}{total\_played}
+$$
+The metric ranges from -1 (all games lost against given rival) to 1 (all games won). In case of even balance it equals to 0.
+
+For example:
+
+```{r scotland}
+headtohead[team == 'Scotland' & rival == 'Wales', ]
+```
+
+# Map
+
+In order to **change country** for which head-to-head stats are displayed **click on it** on the map.
 
 ```{d3 map, data=outcomes_list}
 var margin = {top: 25, right: 25, bottom: 25, left: 25};
-var map_default_scale = 0.7 * 175.295;
-var difference_min = null;
-var difference_max = null;
-// todo change to divergent scale neutral at 0
-var color_scale = d3.scaleSequential(d3.interpolateViridis);
+var map_default_scale = 175.295;
+var map_tooltip = null;
+var map_json = null;
+var color_scale = d3.scaleSequential(d3.interpolatePiYG);
 var missing_color = "#000000";
 
 var map = svg
@@ -126,30 +163,15 @@ var map = svg
   .attr("transform", "translate(" + margin.left + "," + margin.top + ")")
   .attr("id", "mapgroup");
 
-function render_map(map_json, difference, tooltip){
-  for (var key in difference) {
-    if (difference.hasOwnProperty(key)) {
-      // TODO This fails there is no key in json
-      var current_difference = difference[key];
-      var current_tooltip = tooltip[key];
-      if (!difference_min || current_difference < difference_min){
-        difference_min = current_difference;
-      }
-      if (!difference_max || current_difference > difference_max){
-        difference_max = current_difference;
-      }
-      for (var i = 0; i < map_json.features.length; i++) {
-        var current_country = map_json.features[i].properties.admin;
-        if (key == current_country) {
-          map_json.features[i].properties.difference = current_difference;
-          map_json.features[i].properties.tooltip = current_tooltip;
-          break;
-        }
-      }
-    }
-  }
-
-  color_scale.domain([difference_min, difference_max])
+function render_map(initial_country){
+  
+  map.append("text")
+    .attr("text-anchor", "end")
+    .attr("x", 0)
+    .attr("y", 0)
+    .text(initial_country);
+  
+  color_scale.domain([-1, 1]);
   
   var projection = d3.geoNaturalEarth1()
     .translate([width/2, height/2])
@@ -157,7 +179,7 @@ function render_map(map_json, difference, tooltip){
 
   var path = d3.geoPath().projection(projection);
   
-  var map_tooltip = d3.select("body").append("div")
+  map_tooltip = d3.select("body").append("div")
     .attr("class", "tooltip")
     .style("opacity", 0);  
     
@@ -174,31 +196,111 @@ function render_map(map_json, difference, tooltip){
     .attr("d", path)
     .attr("class", "country-border")
     .style("fill", function(d) {
-      var value = d.properties.difference;
-      if (value) {
-        return color_scale(value);
+      var country = d.properties[initial_country];
+      if (country) {
+        return color_scale(country.metric);
       } else {
         return missing_color;
       }
     })
     .on("mouseover", function(d) {
-      var content = d.properties.tooltip;
+      var content = d.properties[initial_country];
       if (typeof content !== 'undefined'){
         map_tooltip.transition().duration(200).style("opacity", 0.9);
-        map_tooltip.html(content)
+        map_tooltip.html(content.tooltip)
           .style("left", (d3.event.pageX) + "px")
           .style("top", (d3.event.pageY - 28) + "px");
       }
     })
     .on("mouseout", function(d) {
-        map_tooltip.transition().duration(500).style("opacity", 0);
+      map_tooltip.transition().duration(500).style("opacity", 0);
+    })
+    .on("click", function(d) {
+      update_map(d.properties.admin);
     });
+    
+  var zooming = function(d) {
+    var offset = [d3.event.transform.x, d3.event.transform.y];
+    var scale_update = (d3.event.transform.k * map_default_scale);
+    projection.translate(offset)
+      .scale(scale_update);
+    map.selectAll("path")
+      .attr("d", path);
+  };
+  
+  var zoom_handler = d3.zoom()
+    .scaleExtent([1, 20])
+    .translateExtent([
+      [-width/2+margin.left, -height/2+margin.top],
+      [width/2+margin.right, height/2+margin.bottom]
+    ])
+    .on("zoom", zooming);
+  
+  map
+    .call(zoom_handler)
+    .call(zoom_handler.transform, function(){
+      return d3.zoomIdentity.translate(width/2, height/2);
+    })
+    .on("wheel", function() {
+      d3.event.preventDefault();
+  });
 };
 
+function update_map(new_country){
+  map.selectAll("path")
+    .style("fill", function(d) {
+      var country = d.properties[new_country];
+      if (country) {
+        return color_scale(country.metric);
+      } else {
+        return missing_color;
+      }
+    })
+    .on("mouseover", function(d) {
+      var content = d.properties[new_country];
+      if (typeof content !== 'undefined'){
+        map_tooltip.transition().duration(200).style("opacity", 0.9);
+        map_tooltip.html(content.tooltip)
+          .style("left", (d3.event.pageX) + "px")
+          .style("top", (d3.event.pageY - 28) + "px");
+      }
+    })
+    .on("mouseout", function(d) {
+      map_tooltip.transition().duration(500).style("opacity", 0);
+    })
+    .on("click", function(d) {
+      console.log(d.properties.admin);
+      update_map(d.properties.admin);
+    });
+};
+  
 d3.json('https://raw.githubusercontent.com/ppatrzyk/kaggle/master/football/map.json')
-  .then(function(map_json){
-    // todo missing args here
-    render_map(map_json);
+  .then(function(json){
+    map_json = json;
+    for (var country in data) {
+      var metric = data[country]['metric'];
+      var tooltip = data[country]['tooltip'];
+      var total = data[country]['total'];
+      // todo set scale
+      for (var key in metric) {
+        if (metric.hasOwnProperty(key)) {
+          var current_metric = metric[key];
+          var current_tooltip = tooltip[key];
+          var current_total = total[key];
+          for (var i = 0; i < map_json.features.length; i++) {
+            var current_country = map_json.features[i].properties.admin;
+            if (key == current_country) {
+              map_json.features[i].properties[country] = {}
+              map_json.features[i].properties[country].metric = current_metric;
+              map_json.features[i].properties[country].tooltip = current_tooltip;
+              map_json.features[i].properties[country].total = current_total;
+              break;
+            }
+          }
+        }
+      }
+    }
+    render_map('Poland');
   });
 
 ```
