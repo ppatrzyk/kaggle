@@ -10,6 +10,7 @@ output:
 library(data.table)
 library(r2d3)
 library(jsonlite)
+library(DT)
 
 knitr::opts_chunk$set(
   echo = FALSE,
@@ -48,7 +49,7 @@ svg {
 
 # Introduction
 
-In this kernel I visualize head-to-head balances in international footbal games. For any given team, you can quickly look up:
+In this kernel I visualize head-to-head balances in international footbal games. For any given team, you can look up:
 
 - what other teams have they played against,
 - with whom do they usually win or lose.
@@ -57,20 +58,14 @@ In this kernel I visualize head-to-head balances in international footbal games.
 
 ```{r dataload}
 games <- fread('results.csv', encoding = 'UTF-8')
+# fix necessary to match geojson
+games[home_team == 'Korea Republic', home_team := 'South Korea']
+games[away_team == 'Korea Republic', away_team := 'South Korea']
+games[home_team == 'Korea DPR', home_team := 'North Korea']
+games[away_team == 'Korea DPR', away_team := 'North Korea']
 ```
 
-The dataset contains `r games[, .N]` matches played by `r games[, uniqueN(c(home_team, away_team))]` different teams. The coverage is quite good as there is even information of games such as:
-
-```{r tibetexample}
-games[
-  home_team == 'Greenland' & away_team == 'Tibet', 
-  .(date, home_team, away_team, home_score, away_score, city)
-]
-```
-
-## Data aggregation
-
-The dataset is aggregated to obtain head-to-head summary (#wins, #draws, #losses) for all team pairs in the dataset.
+The dataset contains `r games[, .N]` matches played by `r games[, uniqueN(c(home_team, away_team))]` different teams. It is aggregated to obtain head-to-head summary (#wins, #draws, #losses) for all team pairs in the dataset.
 
 ```{r getresults}
 games[, goal_diff := home_score - away_score]
@@ -111,24 +106,13 @@ headtohead <- rbindlist(headtohead)
 # toJSON(outcomes_list, auto_unbox = TRUE)
 ```
 
-Aggregated data has `r headtohead[, .N]` rows. As the summary is generated both ways, e.g.:
-
-```{r engswissex}
-headtohead[
-  (team == 'England' & rival == 'Switzerland') | (rival == 'England' & team == 'Switzerland'),
-  .(team, rival, win, draw, loss)
-]
-```
-
-This means that there are `r headtohead[, .N/2]` unique pairs. Given that there are `r paste0('choose(294, 2)', ' = ', choose(games[, uniqueN(c(home_team, away_team))], 2))` possible pairs, this means that only `r paste0(round(100 * headtohead[, .N/2] / choose(games[, uniqueN(c(home_team, away_team))], 2), 2), "%")` of possible matches actually took place.
+There are `r headtohead[, .N/2]` unique pairs in the dataset. Given that there are `r choose(games[, uniqueN(c(home_team, away_team))], 2)` possible pairs, this means that only `r paste0(round(100 * headtohead[, .N/2] / choose(games[, uniqueN(c(home_team, away_team))], 2), 2), "%")` of possible matches actually took place.
 
 Top 10 most often meeting teams:
 
 ```{r totalmax}
 headtohead[order(-total), ][seq(1, 20, 2), .(team, rival, win, draw, loss, total)]
 ```
-
-todo headtohead: 1 historical games hungary 2 transitivity find example
 
 The metric that is displayed on the map below is obtained by using the formula: 
 
@@ -145,7 +129,7 @@ headtohead[team == 'Scotland' & rival == 'Wales', ]
 
 # Map
 
-In order to **change country** for which head-to-head stats are displayed **click on it** on the map.
+Balances for a chosen team are displayed. Countries against which the balance is positive are colored in green, negative in red. In order to **change country** for which head-to-head stats are displayed **click on it** on the map. Zooming (wheel / double-click) and panning (drag) also work.
 
 ```{d3 map, data=outcomes_list}
 var margin = {top: 25, right: 25, bottom: 25, left: 25};
@@ -164,12 +148,6 @@ var map = svg
   .attr("id", "mapgroup");
 
 function render_map(initial_country){
-  
-  map.append("text")
-    .attr("text-anchor", "end")
-    .attr("x", 0)
-    .attr("y", 0)
-    .text(initial_country);
   
   color_scale.domain([-1, 1]);
   
@@ -244,6 +222,13 @@ function render_map(initial_country){
     .on("wheel", function() {
       d3.event.preventDefault();
   });
+    
+  map.append("text")
+    .attr("text-anchor", "start")
+    .attr("font-weight", "bolder")
+    .attr("x", 0)
+    .attr("y", 0)
+    .text('Display: '+initial_country);
 };
 
 function update_map(new_country){
@@ -272,6 +257,7 @@ function update_map(new_country){
       console.log(d.properties.admin);
       update_map(d.properties.admin);
     });
+  map.select("text").text('Display: '+new_country);
 };
   
 d3.json('https://raw.githubusercontent.com/ppatrzyk/kaggle/master/football/map.json')
@@ -305,3 +291,75 @@ d3.json('https://raw.githubusercontent.com/ppatrzyk/kaggle/master/football/map.j
 
 ```
 
+<br>
+
+# Not included on map
+
+It's impossible (or at least impractical) to map overlapping polygons on choropleth map, so balances for some countries need to be presented separately. Games played by Soviet Union are counted for Russia in the dataset.
+
+### Czechoslovakia
+
+```{r czsk}
+datatable(
+  headtohead[
+    team == 'Czechoslovakia',
+  ][
+    order(-total),
+  ]
+)
+```
+
+### Yugoslavia
+
+```{r yugo}
+datatable(
+  headtohead[
+    team == 'Yugoslavia',
+  ][
+    order(-total),
+  ]
+)
+```
+
+### East Germany
+
+```{r nrd}
+datatable(
+  headtohead[
+    team == 'German DR',
+  ][
+    order(-total),
+  ]
+)
+```
+
+# Limitations
+
+Two warnings about using head-to-head summaries in team comparisons ("which team is better"):
+
+Differences are not transitive. If team A has positive balance agsint team B and team B has positive balance against team C it does not necessarily mean that team A has positive balance against team C. For Instance, consider these head-to-head balances:
+
+```{r frenedbel}
+headtohead[
+  (team == 'France' & rival == 'Netherlands') |
+    (team == 'Netherlands' & rival == 'Belgium') |
+    (team == 'France' & rival == 'Belgium'), 
+]
+```
+
+Dataset contains historical games tracking back to 19th century and many teams performed differently over years. For instance, Hungary -- arguably not a top football team nowadays -- maintains a positive balance against many teams, including Brazil and France:
+
+```{r hunexample}
+headtohead[team == 'Hungary' & rival %in% c('Brazil', 'France'), ]
+```
+
+However, the last time they defeated France was in 1976 and all games since then were lost.
+
+```{r hunbra}
+games[
+  as.Date(date) > as.Date('1976-01-01') &
+  ((home_team == 'Hungary' & away_team == 'France') |
+    (away_team == 'Hungary' & home_team == 'France')),
+  .(date, home_team, away_team, home_score, away_score, city)
+]
+```
