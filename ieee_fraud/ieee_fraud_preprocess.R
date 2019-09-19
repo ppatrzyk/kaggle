@@ -39,24 +39,13 @@ for (col in names(transactions)) {
   transactions[, (col) := fix_chars(transactions[[col]])]
 }
 
-cat_cols_prune <- c(
-  paste0('card', c(1, 2, 3, 5)),
-  paste0('addr', 1:2),
-  paste0('id_', c(17, 19, 20, 21, 25, 26, 31, 33))
-)
-for (col in cat_cols_prune) {
-  counts <- as.data.table(transactions[, .N, by = get(col)])[order(-N), ]
-  q1 <- counts[, summary(N)][2]
-  filter_out <- counts[N <= q1, get]
-  transactions[get(col) %in% filter_out, c(col) := 'other']
-}
-
 transactions[, mail_match := (P_emaildomain == R_emaildomain)]
 transactions[, afterdot := tstrsplit(as.character(TransactionAmt), '\\.', keep = 2)]
 transactions[, afterdot_len := nchar(afterdot)]
 transactions[is.na(afterdot_len), afterdot_len := 0]
 transactions[, afterdot_len := paste0('D', afterdot_len)]
 transactions[, afterdot := NULL]
+transactions[, TransactionAmt := log(TransactionAmt)]
 transactions[, DateTime := as.POSIXlt('2017-12-01 00:00:00', tz = 'UTC') + TransactionDT]
 transactions[, Date := as.Date(DateTime)]
 transactions[, wday := weekdays(Date)]
@@ -69,27 +58,62 @@ missing_summary <- function(dt){
   missing <- function(x) {
     mean(is.na(x))
   }
-  mode_prop <- function(x) {
-    mode_val <- names(sort(table(x), decreasing = TRUE))[1]
-    mean(x == mode_val)
-  }
-  funcs <- c('uniqueN', 'missing', 'mode_prop', 'class')
+  funcs <- c('uniqueN', 'missing', 'class')
   res <- dt[, lapply(.SD, function(u){
     sapply(funcs, function(f) do.call(f,list(u)))
   })][, t(.SD)]
   colnames(res) <- funcs
   res <- data.table(res, keep.rownames = TRUE)
+  names(res) <- c('col_name', 'unique_vals', 'missing', 'col_class')
+  res[, unique_vals := as.integer(unique_vals)]
+  res[, missing := as.numeric(missing)]
   return(res)
 }
 col_summary <- missing_summary(transactions)
+col_summary[, missing := round(as.numeric(missing), 2)]
 
-MISSING_THRESHOLD <- 0.8
-drop_cols <- col_summary[
-  (missing > MISSING_THRESHOLD & is.na(mode_prop)) | 
-    (mode_prop > MISSING_THRESHOLD & is.na(missing)), 
-  rn
-]
-transactions[, (drop_cols) := NULL]
+# isFraud ok, won't be there
+numeric_prune <- col_summary[col_class %in% c('numeric', integer) & missing > 0.7, col_name]
+for (col in numeric_prune) {
+  transactions[, (col) := (!is.na(get(col)))]
+}
+
+devices <- transactions[, .N, by = DeviceInfo][order(-N),]
+devices[, device := DeviceInfo]
+devices[N < 100, device := 'other']
+devices[grepl('windows', DeviceInfo, ignore.case = TRUE), device := 'windows']
+devices[grepl('sm', DeviceInfo, ignore.case = TRUE), device := 'samsung']
+devices[grepl('rv:', DeviceInfo, ignore.case = TRUE), device := 'RV']
+devices[grepl('lg', DeviceInfo, ignore.case = TRUE), device := 'LG']
+devices[grepl('moto', DeviceInfo, ignore.case = TRUE), device := 'motorola']
+devices[grepl('^vane|huawei', DeviceInfo, ignore.case = TRUE), device := 'huawei']
+devices[grepl('^vgt', DeviceInfo, ignore.case = TRUE), device := 'gt']
+devices[grepl('blade', DeviceInfo, ignore.case = TRUE), device := 'blade']
+devices[grepl('nexus', DeviceInfo, ignore.case = TRUE), device := 'nexus']
+devices[grepl('pixel', DeviceInfo, ignore.case = TRUE), device := 'pixel']
+devices[grepl('iliu', DeviceInfo, ignore.case = TRUE), device := 'ilium']
+devices[grepl('^vhi', DeviceInfo, ignore.case = TRUE), device := 'hisense']
+devices[grepl('linux', DeviceInfo, ignore.case = TRUE), device := 'linux']
+devices[grepl('^vxt', DeviceInfo, ignore.case = TRUE), device := 'xt']
+devices[grepl('^vf', DeviceInfo, ignore.case = TRUE), device := 'f']
+devices[grepl('^vhtc', DeviceInfo, ignore.case = TRUE), device := 'htc']
+devices[grepl('redmi', DeviceInfo, ignore.case = TRUE), device := 'redmi']
+devices[grepl('^v[0-9]{4}', DeviceInfo, ignore.case = TRUE), device := 'some_numeric']
+devices[, N := NULL]
+transactions <- merge(transactions, devices, by = 'DeviceInfo', all.x = TRUE)
+transactions[, DeviceInfo := NULL]
+
+col_summary <- missing_summary(transactions)
+col_summary[, missing := round(as.numeric(missing), 2)]
+
+cat_cols_prune <- col_summary[col_class == 'character' & unique_vals > 100, col_name]
+for (col in cat_cols_prune) {
+  counts <- as.data.table(transactions[, .N, by = get(col)])[order(-N), ]
+  # cutoff 1st Q
+  q1 <- counts[, summary(N)][2]
+  filter_out <- counts[N <= q1, get]
+  transactions[get(col) %in% filter_out, c(col) := 'other']
+}
 
 median_impute <- function(col) {
   if (class(col) != 'numeric') {
@@ -112,3 +136,14 @@ test[, isFraud := NULL]
 
 fwrite(train, 'train_clean.csv')
 fwrite(test, 'test_clean.csv')
+
+categorical_cols <- c(
+  cat_cols_all,
+  numeric_prune,
+  paste0('M', 1:9),
+  'device', 'DeviceType', 'isIdent',
+  'P_emaildomain', 'R_emaildomain',
+  'ProductCD', 'mail_match',
+  'afterdot_len', 'wday'
+)
+cat(categorical_cols, sep = '\n', file = 'categorical_cols.txt')
