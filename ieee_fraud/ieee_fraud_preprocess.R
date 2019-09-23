@@ -19,7 +19,8 @@ rm(train, test, train_tran, train_iden, test_tran, test_iden)
 cat_cols_all <- c(
   paste0('card', 1:6),
   paste0('addr', 1:2),
-  paste0('id_', 12:38)
+  paste0('id_', 12:38),
+  paste0('M', 1:9)
 )
 for (col in cat_cols_all){
   transactions[, (col) := as.character(transactions[[col]])]
@@ -45,11 +46,13 @@ transactions[, afterdot_len := nchar(afterdot)]
 transactions[is.na(afterdot_len), afterdot_len := 0]
 transactions[, afterdot_len := paste0('D', afterdot_len)]
 transactions[, afterdot := NULL]
-transactions[, TransactionAmt := log(TransactionAmt)]
+trans_by_bin <- transactions[, .(bin_avg = mean(TransactionAmt)), by = card1]
+transactions <- merge(transactions, trans_by_bin, by = 'card1', all.x = TRUE)
+transactions[, bin_deviation := (TransactionAmt - bin_avg)]
 transactions[, DateTime := as.POSIXlt('2017-12-01 00:00:00', tz = 'UTC') + TransactionDT]
 transactions[, Date := as.Date(DateTime)]
 transactions[, wday := weekdays(Date)]
-transactions[, hour := substr(DateTime, 12, 13)]
+transactions[, hour := as.integer(substr(DateTime, 12, 13))]
 transactions[, Date := NULL]
 transactions[, DateTime := NULL]
 transactions[, TransactionDT := NULL]
@@ -69,14 +72,44 @@ missing_summary <- function(dt){
   res[, missing := as.numeric(missing)]
   return(res)
 }
+
+get_min_max <- function(dt){
+  funcs <- c('min', 'max')
+  res <- dt[, lapply(.SD, function(u){
+    sapply(funcs, function(f) do.call(f,list(u, na.rm = TRUE)))
+  })][, t(.SD)]
+  colnames(res) <- funcs
+  res <- data.table(res, keep.rownames = TRUE)
+  names(res) <- c('col_name', funcs)
+  return(res)
+}
+
 col_summary <- missing_summary(transactions)
+min_maxes <- get_min_max(transactions)
+col_summary <- merge(col_summary, min_maxes, by = 'col_name')
+rm(min_maxes)
 col_summary[, missing := round(as.numeric(missing), 2)]
 
-# isFraud ok, won't be there
-numeric_prune <- col_summary[col_class %in% c('numeric', integer) & missing > 0.7, col_name]
-for (col in numeric_prune) {
-  transactions[, (col) := (!is.na(get(col)))]
+missing_impute <- function(col) {
+  if (class(col) != 'numeric') {
+    return(col)
+  } else {
+    col_fixed <- col
+    col_fixed[is.na(col_fixed)] <- (-9999)
+    return(col_fixed)
+  }
 }
+for (col in names(transactions)) {
+  transactions[, (col) := missing_impute(transactions[[col]])]
+}
+
+categorical_cols <- col_summary[col_class %in% c('character', 'logical'), col_name]
+for (col in categorical_cols) {
+  counts <- transactions[, .N, by = col]
+  setnames(counts, 'N', paste0(col, '_count'))
+  transactions <- merge(transactions, counts, by = col, all.x = TRUE)
+}
+transactions[, DeviceInfo := NULL]
 
 devices <- transactions[, .N, by = DeviceInfo][order(-N),]
 devices[, device := DeviceInfo]
@@ -103,6 +136,8 @@ devices[, N := NULL]
 transactions <- merge(transactions, devices, by = 'DeviceInfo', all.x = TRUE)
 transactions[, DeviceInfo := NULL]
 
+categorical_cols <- setdiff(c(categorical_cols, 'device'), 'DeviceInfo')
+
 col_summary <- missing_summary(transactions)
 col_summary[, missing := round(as.numeric(missing), 2)]
 
@@ -115,20 +150,6 @@ for (col in cat_cols_prune) {
   transactions[get(col) %in% filter_out, c(col) := 'other']
 }
 
-median_impute <- function(col) {
-  if (class(col) != 'numeric') {
-    return(col)
-  } else {
-    col_fixed <- col
-    median_val <- median(col_fixed, na.rm = TRUE)
-    col_fixed[is.na(col_fixed)] <- median_val
-    return(col_fixed)
-  }
-}
-for (col in names(transactions)) {
-  transactions[, (col) := median_impute(transactions[[col]])]
-}
-
 train <- transactions[!is.na(isFraud), ]
 test <- transactions[is.na(isFraud), ]
 rm(transactions)
@@ -137,13 +158,4 @@ test[, isFraud := NULL]
 fwrite(train, 'train_clean.csv')
 fwrite(test, 'test_clean.csv')
 
-categorical_cols <- c(
-  cat_cols_all,
-  numeric_prune,
-  paste0('M', 1:9),
-  'device', 'DeviceType', 'isIdent',
-  'P_emaildomain', 'R_emaildomain',
-  'ProductCD', 'mail_match',
-  'afterdot_len', 'wday'
-)
 cat(categorical_cols, sep = '\n', file = 'categorical_cols.txt')
