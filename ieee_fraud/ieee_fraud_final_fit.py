@@ -9,13 +9,11 @@ import joblib
 from lightgbm import LGBMClassifier
 
 if __name__ == '__main__':
-	start = time.time()
-	X_train, y_train = read_train()
-	print(f'read and transformed: {round(time.time()-start, 2)} secs from start')
-
-	for estimators in [100, 150, 200, 300, 400]:
+	for i in range(1, 16):
+		start = time.time()
+		X_train, y_train = read_train(undersample=True, undersample_number=i)
 		lgbm = LGBMClassifier(
-			n_estimators=estimators,
+			n_estimators=100,
 			num_leaves=200,
 			boost_from_average=True,
 			is_unbalance=False,
@@ -31,4 +29,5 @@ if __name__ == '__main__':
 			silent=False, importance_type='split'
 		)
 		lgbm.fit(X_train, y_train)
-		joblib.dump(lgbm, f'lgbm_{estimators}.joblib')
+		joblib.dump(lgbm, f'lgbm_{i}.joblib')
+		print(f'{i}: processed: {round(time.time()-start, 2)} secs from start')

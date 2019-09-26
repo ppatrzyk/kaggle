@@ -8,8 +8,11 @@ from sklearn.preprocessing import OneHotEncoder
 with open('categorical_cols.txt', 'r') as cat_raw:
 	dummy = [re.sub('\n', '', l).strip() for l in cat_raw]
 
-def read_train():
-	train = pd.read_csv("train_clean.csv", sep=",")
+def read_train(undersample=False, undersample_number=0):
+	if not undersample:
+		train = pd.read_csv("train_clean.csv", sep=",")
+	else:
+		train = pd.read_csv(f"train_clean_undersample{undersample_number}.csv", sep=",")
 	train.drop(['TransactionID'], axis=1, inplace=True)
 	train = train.reindex(np.random.permutation(train.index))
 
@@ -24,8 +27,11 @@ def read_train():
 	X_train = ct.fit_transform(train.values)
 	return X_train, y_train
 
-def read_test():
-	train = pd.read_csv("train_clean.csv", sep=",")
+def read_test(undersample=False, undersample_number=0):
+	if not undersample:
+		train = pd.read_csv("train_clean.csv", sep=",")
+	else:
+		train = pd.read_csv(f"train_clean_undersample{undersample_number}.csv", sep=",")
 	test = pd.read_csv("test_clean.csv", sep=",")
 
 	trans_id = test['TransactionID'].values
