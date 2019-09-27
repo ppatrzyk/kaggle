@@ -40,7 +40,15 @@ for (col in names(transactions)) {
   transactions[, (col) := fix_chars(transactions[[col]])]
 }
 
-transactions[, mail_match := (P_emaildomain == R_emaildomain)]
+transactions[P_emaildomain == 'Vgmail', P_emaildomain := 'Vgmail.com']
+transactions[R_emaildomain == 'Vgmail', R_emaildomain := 'Vgmail.com']
+emails_raw <- data.table(mail=unique(c(transactions$P_emaildomain, transactions$R_emaildomain)))
+emails <- data.table(t(emails_raw[, str_split(mail, '\\.', 2)]))
+emails[, email := emails_raw$mail]
+names(emails) <- c('P_mail_host', 'P_mail_extension', 'P_emaildomain')
+transactions <- merge(transactions, emails, by = 'P_emaildomain', all.x = TRUE)
+names(emails) <- c('R_mail_host', 'R_mail_extension', 'R_emaildomain')
+transactions <- merge(transactions, emails, by = 'R_emaildomain', all.x = TRUE)
 transactions[, afterdot := tstrsplit(as.character(TransactionAmt), '\\.', keep = 2)]
 transactions[, afterdot_len := nchar(afterdot)]
 transactions[is.na(afterdot_len), afterdot_len := 0]
@@ -56,6 +64,38 @@ transactions[, hour := as.integer(substr(DateTime, 12, 13))]
 transactions[, Date := NULL]
 transactions[, DateTime := NULL]
 transactions[, TransactionDT := NULL]
+
+fraud_global <- transactions[!is.na(isFraud), mean(isFraud)]
+observations <- transactions[, .N]
+
+cat_fraud <- function(categories) {
+  cat_test <- transactions[
+    !is.na(isFraud), 
+    .(
+      meanfraud = mean(isFraud), 
+      count = .N,
+      freq = (.N / observations)
+    ), 
+    by = c(categories)
+  ][
+    order(-meanfraud),
+  ]
+  return(cat_test)
+}
+
+card1_dist <- cat_fraud('card1')
+card1_dist[, fraud_card := ifelse(meanfraud > fraud_global, 'above', 'below')]
+card1_dist[meanfraud > 0.3, fraud_card := 'extreme']
+card1_dist <- card1_dist[, .(card1, fraud_card)]
+transactions <- merge(transactions, card1_dist, by = 'card1', all.x = TRUE)
+
+transactions[, mail_match := (P_mail_host == R_mail_host)]
+transactions[, mail_ext_match := (P_mail_extension == R_mail_extension)]
+transactions[, wday_hour := paste0(wday, hour)]
+transactions[, addr_all := paste0(addr1, addr2)]
+transactions[, country_ext1 := paste0(P_mail_extension, card3)]
+transactions[, country_ext2 := paste0(P_mail_extension, card5)]
+transactions[, prod_card := paste0(ProductCD, card6)]
 
 missing_summary <- function(dt){
   missing <- function(x) {
@@ -109,7 +149,6 @@ for (col in categorical_cols) {
   setnames(counts, 'N', paste0(col, '_count'))
   transactions <- merge(transactions, counts, by = col, all.x = TRUE)
 }
-transactions[, DeviceInfo := NULL]
 
 devices <- transactions[, .N, by = DeviceInfo][order(-N),]
 devices[, device := DeviceInfo]
