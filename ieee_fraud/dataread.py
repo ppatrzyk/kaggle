@@ -33,7 +33,6 @@ def read_test(undersample=False, undersample_number=0):
 	else:
 		train = pd.read_csv(f"train_clean_undersample{undersample_number}.csv", sep=",")
 	test = pd.read_csv("test_clean.csv", sep=",")
-	test.fillna({'fraud_card': 'above'}, inplace=True)
 
 	trans_id = test['TransactionID'].values
 	test.drop(['TransactionID'], axis=1, inplace=True)

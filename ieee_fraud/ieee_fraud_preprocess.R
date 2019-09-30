@@ -83,12 +83,6 @@ cat_fraud <- function(categories) {
   return(cat_test)
 }
 
-card1_dist <- cat_fraud('card1')
-card1_dist[, fraud_card := ifelse(meanfraud > fraud_global, 'above', 'below')]
-card1_dist[meanfraud > 0.3, fraud_card := 'extreme']
-card1_dist <- card1_dist[, .(card1, fraud_card)]
-transactions <- merge(transactions, card1_dist, by = 'card1', all.x = TRUE)
-
 transactions[, mail_match := (P_mail_host == R_mail_host)]
 transactions[, mail_ext_match := (P_mail_extension == R_mail_extension)]
 transactions[, wday_hour := paste0(wday, hour)]
@@ -113,21 +107,7 @@ missing_summary <- function(dt){
   return(res)
 }
 
-get_min_max <- function(dt){
-  funcs <- c('min', 'max')
-  res <- dt[, lapply(.SD, function(u){
-    sapply(funcs, function(f) do.call(f,list(u, na.rm = TRUE)))
-  })][, t(.SD)]
-  colnames(res) <- funcs
-  res <- data.table(res, keep.rownames = TRUE)
-  names(res) <- c('col_name', funcs)
-  return(res)
-}
-
 col_summary <- missing_summary(transactions)
-min_maxes <- get_min_max(transactions)
-col_summary <- merge(col_summary, min_maxes, by = 'col_name')
-rm(min_maxes)
 col_summary[, missing := round(as.numeric(missing), 2)]
 
 missing_impute <- function(col) {
