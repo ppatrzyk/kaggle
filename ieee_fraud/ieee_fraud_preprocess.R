@@ -25,6 +25,29 @@ cat_cols_all <- c(
 for (col in cat_cols_all){
   transactions[, (col) := as.character(transactions[[col]])]
 }
+
+transactions[, frauds := isFraud]
+transactions[is.na(frauds), frauds := 0]
+transactions[, unique_card := paste0(card1, card2, card3, card4, card5, card6)]
+transactions[, unique_device := paste0(id_30, id_31, id_32, id_33, DeviceType, DeviceInfo)]
+transactions[ProductCD != 'W', previous_fraud := cumsum(frauds), by = .(unique_card, unique_device)]
+# transactions[is.na(previous_fraud), previous_fraud := 0]
+transactions[, previous_fraud := (previous_fraud-1) > 0]
+transactions[, unique_card := NULL]
+transactions[, unique_device := NULL]
+transactions[, frauds := NULL]
+transactions[, previous_fraud := as.character(previous_fraud)]
+transactions[is.na(previous_fraud), previous_fraud := 'unknown']
+
+ids <- transactions[, lapply(.SD, is.na), .SDcols = paste0('id_', 12:38)]
+ids <- ids[, lapply(.SD, function(x) paste0('V', as.character(as.numeric(x))))]
+ids[, id_missing := do.call(paste0, .SD)]
+ids[, id_missing := paste0('V', as.numeric(as.factor(id_missing)))]
+transactions[, id_missing := ids$id_missing]
+ids <- transactions[, .N, by = id_missing]
+transactions[id_missing %in% ids[N < 20, id_missing], id_missing := 'other']
+rm(ids)
+
 fix_chars <- function(col) {
   if (class(col) != 'character') {
     return(col)
@@ -53,10 +76,20 @@ transactions[, afterdot := tstrsplit(as.character(TransactionAmt), '\\.', keep =
 transactions[, afterdot_len := nchar(afterdot)]
 transactions[is.na(afterdot_len), afterdot_len := 0]
 transactions[, afterdot_len := paste0('D', afterdot_len)]
+transactions[is.na(afterdot), afterdot := '0']
+transactions[, cents := round(as.numeric(paste0('0.', afterdot)), 2)]
+transactions[, cents := paste0(ProductCD, as.character(cents))]
+cent_test <- transactions[!is.na(isFraud), .(count = .N, meanfraud = mean(isFraud)), by = cents][order(-meanfraud)]
+transactions[cents %in% cent_test[meanfraud < 0.02, cents], cents := 'other']
 transactions[, afterdot := NULL]
-trans_by_bin <- transactions[, .(bin_avg = mean(TransactionAmt)), by = card1]
+rm(cent_test)
+trans_by_bin <- transactions[, .(bin_median = median(TransactionAmt)), by = card1]
 transactions <- merge(transactions, trans_by_bin, by = 'card1', all.x = TRUE)
-transactions[, bin_deviation := (TransactionAmt - bin_avg)]
+transactions[, bin_deviation := (TransactionAmt - bin_median)]
+trans_by_prodcd <- transactions[, .(prodcd_median = median(TransactionAmt)), by = ProductCD]
+transactions <- merge(transactions, trans_by_prodcd, by = 'ProductCD', all.x = TRUE)
+transactions[, prodcd_deviation := (TransactionAmt - prodcd_median)]
+rm(trans_by_prodcd, trans_by_bin)
 transactions[, DateTime := as.POSIXlt('2017-12-01 00:00:00', tz = 'UTC') + TransactionDT]
 transactions[, Date := as.Date(DateTime)]
 transactions[, wday := weekdays(Date)]
@@ -65,23 +98,14 @@ transactions[, Date := NULL]
 transactions[, DateTime := NULL]
 transactions[, TransactionDT := NULL]
 
-fraud_global <- transactions[!is.na(isFraud), mean(isFraud)]
-observations <- transactions[, .N]
-
-cat_fraud <- function(categories) {
-  cat_test <- transactions[
-    !is.na(isFraud), 
-    .(
-      meanfraud = mean(isFraud), 
-      count = .N,
-      freq = (.N / observations)
-    ), 
-    by = c(categories)
-  ][
-    order(-meanfraud),
-  ]
-  return(cat_test)
-}
+transactions[, dist1_present := !is.na(dist1)]
+transactions[, dist2_present := !is.na(dist2)]
+transactions[dist1_present == FALSE & dist2_present == FALSE, dist_present := 'none']
+transactions[dist1_present == TRUE & dist2_present == FALSE, dist_present := 'd1only']
+transactions[dist1_present == FALSE & dist2_present == TRUE, dist_present := 'd2only']
+transactions[dist1_present == TRUE & dist2_present == TRUE, dist_present := 'both']
+transactions[, dist1_present := NULL]
+transactions[, dist2_present := NULL]
 
 transactions[, mail_match := (P_mail_host == R_mail_host)]
 transactions[, mail_ext_match := (P_mail_extension == R_mail_extension)]
@@ -124,10 +148,12 @@ for (col in names(transactions)) {
 }
 
 categorical_cols <- col_summary[col_class %in% c('character', 'logical'), col_name]
-for (col in categorical_cols) {
+for (col in setdiff(col_summary[col_class == 'character', col_name], "TransactionID")) {
   counts <- transactions[, .N, by = col]
   setnames(counts, 'N', paste0(col, '_count'))
   transactions <- merge(transactions, counts, by = col, all.x = TRUE)
+  print(paste0('Processed: ', col))
+  flush.console()
 }
 
 devices <- transactions[, .N, by = DeviceInfo][order(-N),]
@@ -162,10 +188,10 @@ col_summary[, missing := round(as.numeric(missing), 2)]
 
 cat_cols_prune <- col_summary[col_class == 'character' & unique_vals > 100, col_name]
 for (col in cat_cols_prune) {
-  counts <- as.data.table(transactions[, .N, by = get(col)])[order(-N), ]
+  counts <- as.data.table(transactions[!is.na(isFraud), .(N = .N, meanfraud = mean(isFraud)), by = get(col)])[order(-N), ]
   # cutoff 1st Q
   q1 <- counts[, summary(N)][2]
-  filter_out <- counts[N <= q1, get]
+  filter_out <- counts[N <= q1 & meanfraud < 0.02, get]
   transactions[get(col) %in% filter_out, c(col) := 'other']
 }
 

@@ -3,7 +3,7 @@ library(data.table)
 train <- fread('ieee-fraud-detection/train_clean.csv')
 
 fraud_indices <- which(train$isFraud==1)
-fraud_choose <- ceiling(length(fraud_indices)*0.9)
+fraud_choose <- ceiling(length(fraud_indices)*0.8)
 non_fraud_indices <- which(train$isFraud==0)
 
 for (i in 1:30) {

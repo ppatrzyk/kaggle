@@ -7,10 +7,9 @@ from lightgbm import LGBMClassifier
 if __name__ == '__main__':
 	start = time.time()
 	X_train, y_train = read_train()
-	# X_valid, y_valid = read_train(undersample=True, undersample_number=15)
 	lgbm = LGBMClassifier(
-		n_estimators=100, # 1000
-		num_leaves=200, # 400
+		n_estimators=100,
+		num_leaves=200,
 		min_data_in_leaf=20,
 		boost_from_average=True,
 		is_unbalance=False,
@@ -25,7 +24,6 @@ if __name__ == '__main__':
 		subsample_freq=0, random_state=None, n_jobs=-1, 
 		silent=False, importance_type='split'
 	)
-	# lgbm.fit(X_train, y_train, early_stopping_rounds=300, eval_metric='auc', eval_set=[(X_valid, y_valid)])
 	lgbm.fit(X_train, y_train)
 	print(f'fit done: {round(time.time()-start, 2)} secs from start')
 

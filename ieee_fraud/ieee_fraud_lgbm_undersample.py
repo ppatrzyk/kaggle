@@ -39,8 +39,11 @@ if __name__ == '__main__':
 		lgbm_models.append(lgbm)
 		print(f'{i}: fit done: {round(time.time()-start, 2)} secs from start')
 
+	train_probs = {}
 	for i in range(1, 31):
 		lgbm = lgbm_models[i-1]
+		X_train, y_train = read_train()
+		train_probs[f'm{i}'] = lgbm.predict_proba(X_train)[:,1]
 		X_test, trans_id = read_test(undersample=True, undersample_number=i)
 		lgbm_probs = lgbm.predict_proba(X_test)[:,1]
 		lgbm_probs = ["{:.5f}".format(prob) for prob in lgbm_probs]
@@ -50,3 +53,12 @@ if __name__ == '__main__':
 		})
 		lgbm_submit.to_csv(f'lgbm_under{i}.csv', index=False, header=True)
 		print(f'{i} scoring: {round(time.time()-start, 2)} secs from start')
+
+	try:
+		train = pd.read_csv("train_clean.csv", sep=",")
+		trans_id = train['TransactionID'].values
+		train_probs['TransactionID'] = trans_id
+	except:
+		pass
+	df_blend = pd.DataFrame(train_probs)
+	df_blend.to_csv(f'lgbm_under_blend_data.csv', index=False, header=True)
