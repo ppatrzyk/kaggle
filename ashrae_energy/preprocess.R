@@ -122,6 +122,17 @@ for (col in names(energy)) {
   print(paste(col, missing))
 }
 
-energy[, weekday := weekdays(timestamp)]
-# todo parse timestamp
+meter_pruned <- energy[!is.na(meter_reading), unname(quantile(meter_reading, 0.98))]
+energy[meter_reading > meter_pruned, meter_reading := meter_pruned]
 
+energy[, weekday := weekdays(timestamp)]
+energy[, hour := format(timestamp, '%H')]
+energy[, month := format(timestamp, '%m')]
+energy[, timestamp := NULL]
+energy[, building_id := NULL]
+train_clean <- energy[!is.na(meter_reading), ]
+test_clean <- energy[is.na(meter_reading), ]
+train_clean[, row_id := NULL]
+test_clean[, meter_reading := NULL]
+fwrite(train_clean, 'train_clean.csv')
+fwrite(test_clean, 'test_clean.csv')
