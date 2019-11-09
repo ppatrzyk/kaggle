@@ -17,6 +17,7 @@ rm(weather_test, weather_train, train, test)
 
 # building missing fix ----------------------------------------------------
 
+building[, building_complete := as.numeric(complete.cases(building))]
 buildings <- building[, uniqueN(building_id), by = .(site_id, primary_use)]
 ggplot(data = buildings, aes(x = factor(site_id), y = factor(primary_use), fill = V1)) +
   geom_tile(aes(fill = V1)) +
@@ -114,6 +115,7 @@ weather_add <- data.table(
   timestamp = timestamps_add
 )
 weather <- rbindlist(list(weather, weather_add), fill = TRUE)
+weather[, weather_complete := as.numeric(complete.cases(weather))]
 weather <- weather[order(timestamp), ]
 weather[, cloud_coverage := na.locf(na.locf(cloud_coverage, na.rm = FALSE), fromLast = TRUE), by = site_id]
 weather[, cloud_coverage := as.character(cloud_coverage)]
@@ -220,11 +222,29 @@ energy[, hour := format(timestamp, '%H')]
 energy[, month := format(timestamp, '%m')]
 energy[, timestamp := NULL]
 
+# Encode labels -----------------------------------------------------------
+
+categorical <- c('cloud_coverage', 'primary_use', 'meter', 'building_id', 'site_id', 'weekday', 'hour', 'month')
+for (col in categorical) {
+  energy[, (col) := as.numeric(as.factor(get(col)))]
+  print(col)
+  flush.console()
+}
+
 # write cleaned data ------------------------------------------------------
 
 train_clean <- energy[!is.na(meter_reading), ]
-test_clean <- energy[is.na(meter_reading), ]
 train_clean[, row_id := NULL]
+fwrite(train_clean, 'ashrae-energy-prediction/train_clean.csv', verbose = TRUE)
+rm(train_clean)
+
+test_clean <- energy[is.na(meter_reading), ]
 test_clean[, meter_reading := NULL]
-fwrite(train_clean, 'ashrae-energy-prediction/train_clean.csv')
-fwrite(test_clean, 'ashrae-energy-prediction/test_clean.csv')
+rm(energy)
+
+indices <- 1:test_clean[, .N]
+chunks <- split(indices, cut(seq_along(indices), 10, labels = FALSE)) 
+for (i in 1:10) {
+  chunk <- chunks[[i]]
+  fwrite(test_clean[chunk, ], sprintf('ashrae-energy-prediction/test_clean%s.csv', i), verbose = TRUE)
+}
