@@ -11,7 +11,7 @@ import random
 enemy_actions = []
 my_actions = []
 
-def random_agent(observation, configuration):
+def random_agent():
     action = random.choice((0, 1, 2))
     return action
 
@@ -19,9 +19,9 @@ def agent(observation, configuration):
     global enemy_actions
     global my_actions
     if observation.step == 0:
-        return random_agent(observation, configuration)
+        return random_agent()
     enemy_actions.append(observation.lastOpponentAction)
-    current_agent = random_agent
-    action = current_agent(observation, configuration)
+    # actions knows here
+    action = random_agent()
     my_actions.append(action)
     return action
