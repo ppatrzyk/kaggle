@@ -23,7 +23,8 @@ def random_agent():
     return action
 
 def losing_to_my_last(my_last_action):
-    pass
+    action = get_complementary(my_last_action, 'lose')
+    return action
 
 def agent(observation, configuration):
     global enemy_actions
