@@ -30,13 +30,13 @@ def agent(observation, configuration):
     global enemy_actions
     global my_actions
     if observation.step == 0:
-        return random_agent()
-    enemy_actions.append(observation.lastOpponentAction)
-    # actions known here
-    rand = random.random()
-    if rand < 2/3:
-        action = losing_to_my_last(my_actions[-1])
-    else:
         action = random_agent()
+    else:
+        enemy_actions.append(observation.lastOpponentAction)
+        rand = random.random()
+        if rand < 2/3:
+            action = losing_to_my_last(my_actions[-1])
+        else:
+            action = random_agent()
     my_actions.append(action)
     return action
