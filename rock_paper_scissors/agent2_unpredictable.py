@@ -1,13 +1,5 @@
 import random
 
-# Data:
-# observation.step
-# observation.lastOpponentAction
-
-# rock 0
-# paper 1
-# scissors 2
-
 enemy_actions = []
 my_actions = []
 
@@ -21,7 +13,7 @@ def agent(observation, configuration):
     if observation.step == 0:
         return random_agent()
     enemy_actions.append(observation.lastOpponentAction)
-    # actions knows here
+    # actions known here
     action = random_agent()
     my_actions.append(action)
     return action
