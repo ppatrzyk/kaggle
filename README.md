@@ -14,3 +14,8 @@ Code for stuff published on [kaggle](https://www.kaggle.com/pieca111).
 [ieee_fraud](https://github.com/ppatrzyk/kaggle/tree/master/ieee_fraud):
 
 - feature engineering + models for the [IEEE-CIS Fraud Detection competition](https://www.kaggle.com/c/ieee-fraud-detection).
+
+[ashrae_energy](ashrae_energy)
+
+- [ASHRAE - Great Energy Predictor III](https://www.kaggle.com/c/ashrae-energy-prediction) competition.
+
