@@ -11,11 +11,12 @@ def get_complementary(action, result):
     result - ('win', 'lose')
     """
     if result == 'win':
-        pass
+        complementary = (action + 1) % 3
     elif result == 'lose':
-        pass
+        complementary = (action + 2) % 3
     else:
         raise ValueError('win/lose expected')
+    return complementary
 
 def random_agent():
     action = random.choice((0, 1, 2))
