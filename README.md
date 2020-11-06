@@ -19,3 +19,6 @@ Code for stuff published on [kaggle](https://www.kaggle.com/pieca111).
 
 - [ASHRAE - Great Energy Predictor III](https://www.kaggle.com/c/ashrae-energy-prediction) competition.
 
+[rock_paper_scissors](rock_paper_scissors)
+
+- [Rock, Paper, Scissors](https://www.kaggle.com/c/rock-paper-scissors) competition.
