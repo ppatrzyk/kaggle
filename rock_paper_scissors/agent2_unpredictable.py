@@ -11,3 +11,7 @@ import random
 def random_agent(observation, configuration):
     action = random.choice((0, 1, 2))
     return action
+
+def agent(observation, configuration):
+    current_agent = random_agent
+    return current_agent(observation, configuration)
