@@ -3,9 +3,26 @@ import random
 enemy_actions = []
 my_actions = []
 
+def get_complementary(action, result):
+    """
+    Get an action that would win/lose with given one
+
+    action - (0, 1, 2)
+    result - ('win', 'lose')
+    """
+    if result == 'win':
+        pass
+    elif result == 'lose':
+        pass
+    else:
+        raise ValueError('win/lose expected')
+
 def random_agent():
     action = random.choice((0, 1, 2))
     return action
+
+def losing_to_my_last(my_last_action):
+    pass
 
 def agent(observation, configuration):
     global enemy_actions
