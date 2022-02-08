@@ -3,3 +3,4 @@
 !music/countries.csv
 !music/country_codes.csv
 **/*.html
+**/.ipynb_checkpoints
