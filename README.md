@@ -23,6 +23,6 @@ Code for stuff published on [kaggle](https://www.kaggle.com/pieca111).
 
 - [Rock, Paper, Scissors](https://www.kaggle.com/c/rock-paper-scissors) competition.
 
-[cars][cars]
+[cars](cars)
 
 - EDA notebook [Cars EDA (polars, altair)](https://www.kaggle.com/pieca111/cars-eda-polars-altair)
