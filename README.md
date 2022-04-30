@@ -26,3 +26,9 @@ Code for stuff published on [kaggle](https://www.kaggle.com/pieca111).
 [cars](cars)
 
 - EDA notebook [Cars EDA (polars, altair)](https://www.kaggle.com/pieca111/cars-eda-polars-altair)
+
+[public_transport](public_transport)
+
+- Exploratory notebook for [Wrocław public transport](https://www.kaggle.com/code/pieca111/wroc-aw-public-transport). Code for creating dataset is in [another repo](https://github.com/ppatrzyk/stream-transport).
+
+
