@@ -2,6 +2,10 @@
 
 Code for stuff published on [kaggle](https://www.kaggle.com/pieca111).
 
+## [weather_forecasts](weather_forecasts)
+
+- Notebook [Wrocław weather forecasts](https://www.kaggle.com/pieca111/wroc-aw-weather-forecasts). [Dataset](https://www.kaggle.com/datasets/pieca111/weather-forecasts) collection explained [here](https://github.com/ppatrzyk/forecast-monitor).
+
 ## [public_transport](public_transport)
 
 - Exploratory notebook for [Wrocław public transport](https://www.kaggle.com/code/pieca111/wroc-aw-public-transport). Code for creating [dataset](https://www.kaggle.com/datasets/pieca111/wroclaw-public-transport) is in [another repo](https://github.com/ppatrzyk/stream-transport).
