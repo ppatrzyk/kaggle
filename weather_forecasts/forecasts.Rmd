@@ -1,0 +1,137 @@
+---
+title: "Wrocław Weather Forecasts"
+author: "Piotr Patrzyk"
+output: 
+  html_document:
+    keep_md: false
+    toc: true
+    toc_depth: 2
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(
+  fig.align = 'center', 
+  fig.height = 5,
+  out.width = '80%',
+  dev = 'png',
+  warning = FALSE
+)
+```
+
+## Introduction
+
+In this report I analyze accuracy of historical weather _forecasts_ data.
+
+```{r dataload, echo=FALSE, warning = FALSE}
+library(data.table)
+library(knitr)
+library(ggplot2)
+
+df <- fread("~/Documents/Github/kaggle/weather_forecasts/forecasts.csv")
+df <- df[order(weather_time, forecast_time, source), ]
+
+# This load actual weather data to evaluate forecasts
+# https://www.wunderground.com/history/daily/pl/wroc%C5%82aw/EPWR/date/2022-7-19
+weather_url <- "https://api.weather.com/v1/location/EPWR:9:PL/observations/historical.json?apiKey=e1f10a1e78da46f5b10a1e78da96f525&units=m&startDate=20220721&endDate=20220801"
+history_json <- jsonlite::fromJSON(weather_url)
+history_df <- data.table(
+  actual_temp = history_json$observations[['temp']],
+  weather_time = as.POSIXct(history_json$observations[['valid_time_gmt']], origin="1970-01-01", tz='UTC')
+)
+
+# Compare actual weather data to forecasts data
+df_comp <- df[history_df, on="weather_time", nomatch=0][forecast_time <= weather_time, ]
+df_comp[, temp_error := temperature-actual_temp]
+df_comp[, temp_error_abs := abs(temp_error)]
+df_comp[, forecast_diff := as.numeric(difftime(forecast_time, weather_time, units="hours"))]
+
+# Forecasts for which hour have most variability
+vars <- df_comp[, .(var = var(temperature), range = (max(temperature) - min(temperature))), by = .(source, weather_time)][order(var, decreasing = TRUE), ]
+
+```
+
+## All forecasts
+
+Points denote all forecasts that were made for given time.
+
+```{r timeseries, echo=FALSE, warning = FALSE}
+ggplot(df_comp) +
+  geom_point(aes(x=weather_time, y=temperature, group=source, color=source), alpha=0.01) +
+  geom_line(aes(x=weather_time, y=actual_temp, color="actual"), size=1.5) +
+  labs(title = "Actual temperature vs all forecasts")
+```
+
+Forecasts for one specific day. Jitter applied for better visibility.
+
+```{r timeseries2, echo=FALSE, warning = FALSE}
+ggplot(df_comp[weather_time > as.POSIXlt("2022-07-31T00:00:00", format="%Y-%m-%dT%H:%M:%S", tz = "UTC") & weather_time < as.POSIXlt("2022-07-31T23:59:00", format="%Y-%m-%dT%H:%M:%S", tz = "UTC"), ]) +
+  geom_jitter(aes(x=weather_time, y=temperature, group=source, color=source), alpha=0.01) +
+  geom_line(aes(x=weather_time, y=actual_temp, color="actual"), size=1.5) +
+  labs(title = "Forecasts for 2022-07-31")
+```
+
+This zooms even more into one example (i.e. forecasts for one specific hour from one source). As can be seen, forecasts change across time and are more or less accurate depending on when we check the weather.
+
+```{r example, echo=FALSE, warning = FALSE}
+ggplot(df_comp[source == vars$source[2] & weather_time == vars$weather_time[2]]) +
+  geom_line(aes(x=forecast_time, y=temperature, color="forecast")) +
+  geom_hline(aes(yintercept=actual_temp, color="actual")) +
+  labs(title = paste(vars$source[2], "forecasts for:", vars$weather_time[2]))
+```
+
+Weather forecasts for specific hour can have pretty huge range (i.e. difference between min and max values predicted at different time points).
+
+```{r vars, echo=FALSE, warning = FALSE}
+knitr::kable(head(vars))
+```
+
+## Evaluate forecast errors
+
+```{r errorsdt, echo=FALSE, warning = FALSE }
+error_summary <- rbindlist(list(
+  df_comp[, .(metric = names(summary(temp_error)), value = as.numeric(summary(temp_error))), by = source],
+  df_comp[, .(metric = "sd", value = sd(temp_error)), by = source],
+  df_comp[, .(metric = "mse", value = sqrt(mean(temp_error^2))), by = source],
+  df_comp[, .(metric = "max_abs_error", value = max(abs(temp_error))), by = source],
+  df_comp[, .(metric = "median_abs_error", value = median(abs(temp_error))), by = source]
+))
+error_summary_cast <- dcast.data.table(error_summary, source ~ metric)
+kable(error_summary_cast)
+```
+
+Distribution of errors. Vertical line denotes median error.
+
+```{r hist, echo=FALSE, warning = FALSE }
+ggplot(df_comp, aes(x=temp_error)) +
+  geom_histogram(bins=100) +
+  geom_vline(aes(xintercept = Median, color = source), error_summary_cast) +
+  facet_grid(source ~ .) +
+  labs(title = "Histogram of errors")
+```
+
+Here I compare data sources by errors they make. tomorrow.io is the best source from the evaluated ones.
+
+```{r mse, echo=FALSE, warning = FALSE }
+ggplot(error_summary[metric %in% c("max_abs_error", "median_abs_error", "mse"), ], aes(x=source, xend=source, y=0, yend=value)) +
+  geom_segment() +
+  geom_point(aes(x=source, y=value), size = 4, pch = 21, bg = 4, col = 1) +
+  coord_flip() +
+  facet_grid(metric ~ .) +
+  labs(title = "Errors by source")
+```
+
+Do forecasts get more accurate as less time is remaining? Here I show correlation between forecast timing (how many hours before a forecast was made) and absolute error. As expected, forecasts get slightly more accurate, but relationship is not very strong.
+
+```{r}
+kable(df_comp[, .(corr = cor(forecast_diff, temp_error_abs)), by = source])
+ggplot(df_comp, aes(x=forecast_diff, y=temp_error_abs)) +
+  geom_point(alpha=0.01) +
+  geom_smooth(method='lm') + 
+  facet_grid(source ~ .) +
+  labs(title = "Errors by forecast timing", x = "Forecast before (hours)")
+
+```
+
+_Limitations_
+
+This analysis focused on forecasts data for just one city. For more thorough performance benchmarking one should collect forecast data on more places.
